@@ -15,7 +15,7 @@ libraryDependencies ++= Seq(
   // Add your project dependencies here,
   "com.h2database" % "h2" % "1.3.176",
   // JDBC driver for mariadb
-  "org.mariadb.jdbc" % "mariadb-java-client" % "1.3.5",
+  "org.mariadb.jdbc" % "mariadb-java-client" % "1.3.6",
   // Core Library
   "org.eclipse.jgit" % "org.eclipse.jgit" % "3.5.3.201412180710-r",
   // Smart HTTP Servlet
@@ -41,13 +41,14 @@ libraryDependencies ++= Seq(
   "commons-io" % "commons-io" % "2.4",
   "org.julienrf" %% "play-jsmessages" % "1.6.2",
   "commons-collections" % "commons-collections" % "3.2.1",
-  "org.jsoup" % "jsoup" % "1.8.2",
+  "org.jsoup" % "jsoup" % "1.8.3",
   "com.googlecode.juniversalchardet" % "juniversalchardet" % "1.0.3",
   "org.mockito" % "mockito-all" % "1.9.0" % "test",
   "com.github.zafarkhaja" % "java-semver" % "0.7.2",
   "com.google.guava" % "guava" % "19.0",
   "com.googlecode.htmlcompressor" % "htmlcompressor" % "1.4",
-  "org.springframework" % "spring-jdbc" % "4.1.5.RELEASE"
+  "org.springframework" % "spring-jdbc" % "4.1.5.RELEASE",
+  "org.mozilla" % "rhino" % "1.7.7.1"
 )
 
 val projectSettings = Seq(

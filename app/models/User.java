@@ -40,6 +40,7 @@ import play.data.validation.Constraints.ValidateWith;
 import play.db.ebean.Model;
 import play.db.ebean.Transactional;
 import play.i18n.Messages;
+import utils.CacheStore;
 import utils.JodaDateUtil;
 import utils.ReservedWordsValidator;
 
@@ -167,9 +168,6 @@ public class User extends Model implements ResourceConvertible {
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
     public List<Email> emails;
 
-    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
-    public RecentlyVisitedProjects recentlyVisitedProjects;
-
     @OneToMany(mappedBy = "user")
     public List<Mention> mentions;
 
@@ -178,6 +176,9 @@ public class User extends Model implements ResourceConvertible {
      * such as "ko", "en-US" or "ja". This field is used as a language for notification mail.
      */
     public String lang;
+
+    @Transient
+    public Long lastVisitedProjectId;
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
     public List<OrganizationUser> organizationUsers;
@@ -254,6 +255,28 @@ public class User extends Model implements ResourceConvertible {
         return user.id;
     }
 
+
+    /**
+     * find a user by id with cache
+     *
+     * If there is no user correspond to login id string,
+     * then null
+     *
+     * @param id
+     * @return User or null
+     */
+    public static User findByIdUsingCache(Long id) {
+        User cached = CacheStore.userMap.get(Long.toString(id)); // special char + added to loginId key
+        if(cached != null) {
+            return cached;
+        }
+        User user = find.byId(id);
+        if(user != null){
+            CacheStore.userMap.putIfAbsent(Long.toString(id), user);
+        }
+        return user;
+    }
+
     /**
      * find a user by login id string
      *
@@ -264,11 +287,16 @@ public class User extends Model implements ResourceConvertible {
      * @return User or {@link #anonymous}
      */
     public static User findByLoginId(String loginId) {
+        User cached = CacheStore.userMap.get("+" + loginId); // special char + added to loginId key
+        if(cached != null) {
+            return cached;
+        }
         User user = find.where().eq("loginId", loginId).findUnique();
         if (user == null) {
             return anonymous;
         }
         else {
+            CacheStore.userMap.putIfAbsent("+" + loginId, user);
             return user;
         }
     }
@@ -754,16 +782,19 @@ public class User extends Model implements ResourceConvertible {
     }
 
     public void visits(Project project) {
-        this.recentlyVisitedProjects = RecentlyVisitedProjects.addNewVisitation(this, project);
-        this.update();
+        if(!Objects.equals(project.id, this.lastVisitedProjectId)){
+            this.lastVisitedProjectId = project.id;
+            RecentProject.addNew(this, project);
+        }
     }
 
-    public List<ProjectVisitation> getVisitedProjects(int size) {
-        if(size < 1 || this.recentlyVisitedProjects == null) {
+    public List<Project> getVisitedProjects() {
+        List<Project> projects = RecentProject.getRecentProjects(this);
+        if(projects == null || projects.size() == 0){
             return new ArrayList<>();
         }
 
-        return this.recentlyVisitedProjects.findRecentlyVisitedProjects(size);
+        return projects;
     }
 
     public List<Organization> getOrganizations(int size) {
