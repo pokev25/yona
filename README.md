@@ -7,7 +7,9 @@ Yona
 
 21세기 협업 개발 플랫폼
 
-DEMO: [http://yona.io](http://yona.io)
+DEMO: [http://repo.yona.io](http://repo.yona.io)
+
+Official Site: [http://yona.io](http://yona.io)
 
 Yona?
 --
@@ -53,7 +55,10 @@ Yona는 앞으로 기본DB를 MariaDB를 사용할 예정입니다. 다만 Yona 
 [yona-1.0-h2.zip](https://github.com/yona-projects/yona/releases/tag/v1.0.0) MariaDB로 변경이 어렵거나 간편하게 설치해서 사용하실때는 이쪽을 이용해 주세요.
 
 관련해서는 다음 링크를 참고해 주세요
-[Yona가 MariaDB를 기본 DB로 사용하게 된 이유](https://repo.yona.io/yona-projects/yona/post/4)
+- [Yona가 MariaDB를 기본 DB로 사용하게 된 이유](https://repo.yona.io/yona-projects/yona/post/4)
+
+그리고 Docker 를 이용해 설치하실분은 
+  - [pokev25](https://github.com/pokev25) 님의 https://github.com/pokev25/docker-yona 를 이용해주세요
 
 #### MariaDB 설치
 
@@ -183,6 +188,10 @@ db.default.password="yonadan"
 이제 웹 브라우저로 http://127.0.0.1:9000 에 접속하면 환영 페이지를 보실 수 있습니다. 
 어드민 설정을 마치고 다시 쉘을 시작합니다.
 
+**유의! windows os 사용자의 경우**
+[#windows의-경우](https://github.com/yona-projects/yona#windows의-경우)를 꼭 참고해주세요
+
+
 만약 콘솔에 DB 관련 에러 특히 
 ```
 [error] play - Specified key was too long; max key length is 767 bytes [ERROR:1071, SQLSTATE:42000] 
@@ -229,11 +238,14 @@ db.default.password="yonadan"
 
 #### Windows의 경우
 
-Yona를 시작할 때, 데이터 디렉터리, 설정파일, 로그 설정파일의 위치를 각각
-yona.home, config.file, logger.file 자바 프로퍼티로 지정할 수 있습니다.
+Yona를 시작할 때, YONA_HOME 폴더의 위치를 지정해서 아래 명령순서로 실행해주세요!
+아래 내용이 들어가 있는 run.bat을 따로 만드셔도 좋습니다!
 
-SET JAVA_OPTS=-Dyona.home=C:\yona-1.0.2 -Dconfig.file=C:\yona-1.0.2\conf\application.conf -Dlogger.file=C:\yona-1.0.2\conf\application-logger.xml
+```
+SET YONA_HOME=c:\yona\yona-1.0.4
+SET JAVA_OPTS=-Dyona.home=%YONA_HOME% -Dconfig.file=%YONA_HOME%\conf\application.conf -Dlogger.file=%YONA_HOME%\conf\application-logger.xml
 bin\yona.bat
+```
 
 `_JAVA_OPTIONS` 환경변수를 이용해 자바 환경 변수를 지정할 수도 있습니다. 시스템
 메모리가 4기가 이상이라면, 다음과 같은 옵션으로 실행하는 걸 권장합니다.

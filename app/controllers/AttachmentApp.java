@@ -63,6 +63,9 @@ public class AttachmentApp extends Controller {
         File file = filePart.getFile();
 
         User uploader = UserApp.currentUser();
+        if (uploader.isAnonymous()) {
+            uploader = User.findByUserToken(request().getHeader("Yona-Token"));
+        }
 
         // Anonymous cannot upload a file.
         if (uploader.isAnonymous()) {
