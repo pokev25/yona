@@ -164,7 +164,7 @@
                 return false;
             }
 
-            var sTargetPath = htVar.aPathQueue.shift();
+            var sTargetPath = decodeURI(htVar.aPathQueue.shift());
             var welTarget = $('[data-targetpath="' + sTargetPath + '"]');
 
             if(_isListExistsByPath(sTargetPath)){
@@ -510,6 +510,7 @@
             var aCrumbs = ['<a href="' + htVar.sBasePathURL + '">' + htVar.sProjectName + '</a>'];
 
             aPathQueue.forEach(function(sPath){
+                sPath = decodeURI(sPath);
                 sLink = _getCorrectedPath(htVar.sBasePathURL, sPath);
                 sName = sPath.split("/").pop();
                 aCrumbs.push('<a href="' + sLink + '">' + sName + '</a>');
@@ -518,6 +519,26 @@
             var breadcrumb = $yobi.xssClean(aCrumbs.join(""));
 
             htElement.welBreadCrumbs.html(breadcrumb);
+
+            var $newFileLink = $("#new-file-link");
+            var path = window.location.hash.substr(1);
+
+            // 'New File' Button supports only git repositories.
+            if ($newFileLink[0]) {
+                var newPath = updateQueryStringParameter($newFileLink.attr("href"), "path", path + "/");
+                $newFileLink.attr("href", newPath);
+            }
+        }
+
+        function updateQueryStringParameter(uri, key, value) {
+            var re = new RegExp("([?&])" + key + "=.*?(&|$)", "i");
+            var separator = uri.indexOf('?') !== -1 ? "&" : "?";
+            if (uri.match(re)) {
+                return uri.replace(re, '$1' + key + "=" + value + '$2');
+            }
+            else {
+                return uri + separator + key + "=" + value;
+            }
         }
 
         _init(htOptions || {});

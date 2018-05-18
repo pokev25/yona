@@ -45,6 +45,8 @@
             _initPagination();
             _initPjax();
             _initImplicitTitlePrefix();
+            _listHoverEffect();
+            _initTwoColumnMode();
 
             htInitialOptions = htOptions || {};
         }
@@ -248,6 +250,16 @@
             _initCalendar();
             _initImplicitTitlePrefix();
             _addEventAtOrganizationIssueSearchPage();
+            _listHoverEffect();
+            _initTwoColumnMode();  // yona.twoColumnMode.js
+        }
+
+        function _listHoverEffect(){
+            $(".post-item").hover(function () {
+                $(this).css("background-color", "#fafafa");
+            }, function () {
+                $(this).css("background-color", "#fff");
+            });
         }
 
         function _addEventAtOrganizationIssueSearchPage() {

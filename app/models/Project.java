@@ -1,28 +1,15 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2012 NAVER Corp.
- * http://yobi.io
- *
- * @author Hwi Ahn
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp.
+ * https://yona.io
+ **/
 package models;
 
 import com.avaje.ebean.Ebean;
 import com.avaje.ebean.ExpressionList;
 import com.avaje.ebean.Page;
+import com.avaje.ebean.RawSqlBuilder;
 import models.enumeration.ProjectScope;
 import models.enumeration.RequestState;
 import models.enumeration.ResourceType;
@@ -40,8 +27,8 @@ import play.data.validation.Constraints;
 import play.db.ebean.Model;
 import play.db.ebean.Transactional;
 import playRepository.*;
-import utils.FileUtil;
 import utils.CacheStore;
+import utils.FileUtil;
 import utils.JodaDateUtil;
 import validation.ExConstraints;
 
@@ -50,6 +37,10 @@ import javax.persistence.*;
 import javax.servlet.ServletException;
 import java.io.IOException;
 import java.util.*;
+
+import static utils.CacheStore.getProjectCacheKey;
+import static utils.CacheStore.projectMap;
+import static utils.HttpUtil.decodeUrlString;
 
 @Entity
 public class Project extends Model implements LabelOwner {
@@ -62,7 +53,7 @@ public class Project extends Model implements LabelOwner {
     public Long id;
 
     @Constraints.Required
-    @Constraints.Pattern("^[a-zA-Z0-9-_\\.]+$")
+    @Constraints.Pattern("^[a-zA-Z0-9-_\\.가-힣]+$")
     @ExConstraints.Restricted({".", "..", ".git"})
     public String name;
 
@@ -92,6 +83,8 @@ public class Project extends Model implements LabelOwner {
     private long lastIssueNumber;
 
     private long lastPostingNumber;
+
+    public boolean isCodeAccessibleMemberOnly;
 
     @ManyToMany
     public Set<Label> labels;
@@ -157,15 +150,19 @@ public class Project extends Model implements LabelOwner {
 
     public static Page<Project> findByName(String name, int pageSize,
                                            int pageNum) {
-        return find.where().ilike("name", "%" + name + "%")
+        if(StringUtils.isBlank(name)){
+            return find.where().order().desc("createdDate").findPagingList(pageSize).getPage(pageNum);
+        }
+
+        return find.where().ilike("name", "%" + decodeUrlString(name) + "%")
                 .findPagingList(pageSize).getPage(pageNum);
     }
 
     public static Project findByOwnerAndProjectName(String loginId, String projectName) {
-        String key = loginId + ":" + projectName;
+        String key = getProjectCacheKey(loginId, projectName);
         Long projectId = CacheStore.projectMap.get(key);
         if(projectId == null || projectId == 0){
-            Project project= find.where().ieq("owner", loginId).ieq("name", projectName)
+            Project project= find.where().ieq("owner", decodeUrlString(loginId)).ieq("name", decodeUrlString(projectName))
                     .findUnique();
             if(project != null){
                 CacheStore.projectMap.put(key, project.id);
@@ -173,6 +170,53 @@ public class Project extends Model implements LabelOwner {
             return project;
         } else {
             return find.byId(projectId);
+        }
+    }
+
+    public Set<User> findAuthors() {
+        Set<User> allAuthors = new LinkedHashSet<>();
+        allAuthors.addAll(getIssueUsers());
+        allAuthors.addAll(getPostingUsers());
+        allAuthors.addAll(getPullRequestUsers());
+
+        return allAuthors;
+    }
+
+    public Set<User> findAuthorsAndWatchers() {
+        Set<User> allAuthors = new LinkedHashSet<>();
+        allAuthors.addAll(findAuthors());
+        allAuthors.addAll(getWatchedUsers());
+
+        return allAuthors;
+    }
+
+    private Set<User> getIssueUsers() {
+        String issueSql = "select distinct author_id id from issue where project_id=" + this.id;
+        return User.find.setRawSql(RawSqlBuilder.parse(issueSql).create()).findSet();
+    }
+
+    private Set<User> getPostingUsers() {
+        String postSql = "SELECT distinct author_id id FROM posting where project_id=" + this.id;
+        return User.find.setRawSql(RawSqlBuilder.parse(postSql).create()).findSet();
+    }
+
+    private Set<User> getPullRequestUsers() {
+        String postSql = "SELECT distinct contributor_id id FROM pull_request where to_project_id=" + this.id;
+        return User.find.setRawSql(RawSqlBuilder.parse(postSql).create()).findSet();
+    }
+
+    public Set<User> getWatchedUsers() {
+        String postSql = "SELECT distinct user_id id FROM watch where resource_type='PROJECT' and resource_id=" + this.id;
+        return User.find.setRawSql(RawSqlBuilder.parse(postSql).create()).findSet();
+    }
+
+    public boolean hasMember(User user) {
+        if (user.isMemberOf(this) ||
+                user.isManagerOf(this) ||
+                user.isSiteManager()) {
+            return true;
+        } else {
+            return false;
         }
     }
 
@@ -184,7 +228,7 @@ public class Project extends Model implements LabelOwner {
 
     public static boolean projectNameChangeable(Long id, String userName,
                                                 String projectName) {
-        int findRowCount = find.where().ieq("name", projectName)
+        int findRowCount = find.where().ieq("name", decodeUrlString(projectName))
                 .ieq("owner", userName).ne("id", id).findRowCount();
         return (findRowCount == 0);
     }
@@ -236,12 +280,18 @@ public class Project extends Model implements LabelOwner {
     }
 
     public static List<Project> findProjectsCreatedByUser(String loginId, String orderString) {
-        List<Project> userProjectList = find.where().eq("owner", loginId).findList();
         if( orderString == null ){
-            return userProjectList;
+            return find.where().eq("owner", loginId).orderBy("createdDate desc").findList();
+        } else {
+            return find.where().eq("owner", loginId).orderBy(orderString).findList();
         }
 
-        return Ebean.filter(Project.class).sort(orderString).filter(userProjectList);
+    }
+
+    public static List<Project> findProjectsCreatedByUserAndScope(String loginId, ProjectScope projectScope, String orderString) {
+        return find.where().eq("owner", loginId)
+                .eq("projectScope", projectScope)
+                .orderBy(orderString).findList();
     }
 
     public Date lastUpdateDate() {
@@ -251,6 +301,9 @@ public class Project extends Model implements LabelOwner {
             if (!branches.isEmpty() && repository instanceof GitRepository) {
                 GitRepository gitRepo = new GitRepository(owner, name);
                 List<Commit> history = gitRepo.getHistory(0, 2, "HEAD", null);
+                if(history == null) {
+                    return this.createdDate;
+                }
                 return history.get(0).getAuthorDate();
             }
         } catch (IOException e) {
@@ -290,6 +343,16 @@ public class Project extends Model implements LabelOwner {
         try {
             byte[] bytes = RepositoryService.getRepository(this)
                     .getRawFile("HEAD", getReadmeFileName());
+            return new String(bytes, FileUtil.detectCharset(bytes));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public String getIssueTemplate() {
+        try {
+            byte[] bytes = RepositoryService.getRepository(this)
+                    .getRawFile("HEAD", "ISSUE_TEMPLATE.md");
             return new String(bytes, FileUtil.detectCharset(bytes));
         } catch (Exception e) {
             return null;
@@ -439,6 +502,11 @@ public class Project extends Model implements LabelOwner {
             @Override
             public ResourceType getType() {
                 return ResourceType.PROJECT;
+            }
+
+            @Override
+            public Project getProject() {
+                return Project.this;
             }
 
         };
@@ -632,6 +700,7 @@ public class Project extends Model implements LabelOwner {
     @Override
     public void delete() {
         CacheStore.refreshProjectMap();
+        projectMap.remove(getProjectCacheKey(this.owner, this.name));
         deleteProjectTransfer();
         deleteFork();
         deleteCommentThreads();

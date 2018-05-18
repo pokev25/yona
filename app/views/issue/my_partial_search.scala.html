@@ -1,24 +1,13 @@
 @**
-* Yobi, Project Hosting SW
+* Yona, 21st Century Project Hosting SW
 *
-* Copyright 2014 NAVER Corp.
-* http://yobi.io
-*
-* @author Suwon Chae
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+* Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+* https://yona.io
 **@
-@(title: String, currentPage: com.avaje.ebean.Page[Issue], param:models.support.SearchCondition, project:Project)
+@import java.util
+@import com.avaje.ebean.Page
+@import models.support.SearchCondition
+@(title: String, currentPage: Page[Issue], param:SearchCondition, project:Project)
 
 @import helper._
 @import models.enumeration._
@@ -34,22 +23,22 @@
 }
 
 <div pjax-container class="row-fluid issue-list-wrap">
-    <div class="span2 span-hard-wrap">
+    <div class="left-menu span2 span-hard-wrap">
         <div class="inner advanced">
             @my_partial_list_quicksearch(param)
-
-            <hr class="hide-in-mobile">
 
             <form id="search" name="search" action="@routes.IssueApp.userIssues()" method="get">
                 <input type="hidden" name="orderBy" value="@param.orderBy">
                 <input type="hidden" name="orderDir" value="@param.orderDir">
                 <input type="hidden" name="state" value="@param.state">
                 <input type="hidden" name="authorId" value="@param.authorId" data-search="authorId">
+                <input type="hidden" name="commenterId" value="@param.commenterId" data-search="commenterId">
                 <input type="hidden" name="assigneeId" value="@param.assigneeId" data-search="assigneeId">
                 <input type="hidden" name="mentionId" value="@param.mentionId" data-search="mentionId">
-                <div class="search">
+                <input type="hidden" name="sharerId" value="@param.sharerId" data-search="sharerId">
+                <div class="search myissues-search-input">
                     <div class="search-bar">
-                        <input name="filter" class="textbox full" type="text" value="@param.filter">
+                        <input name="filter" class="textbox full" type="text" value="@param.filter" placeholder="@Messages("issue.search")">
                         <button type="submit" class="search-btn"><i class="yobicon-search"></i></button>
                     </div>
                 </div>
@@ -64,6 +53,9 @@
                 }
             }
         </div>
+        <div class="user-project-list myissues hide-in-mobile">
+        @views.html.index.displayProjectsWithFavored("recentlyVisited", new util.ArrayList(),  UserApp.currentUser().getFavoriteProjects, true)
+        </div>
     </div>
     <div class="span10 span-hard-wrap" id="span10">
         <ul class="nav nav-tabs nm">
@@ -75,6 +67,7 @@
                 </a>
             </li>
         }
+            <li>@common.twoColumnModeCheckboxArea()</li>
         </ul>
         @if(!currentPage.getList.isEmpty){
             <div class="filter-wrap small-heights">

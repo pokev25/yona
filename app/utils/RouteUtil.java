@@ -1,23 +1,9 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2014 NAVER Corp.
- * http://yobi.io
- *
- * @author Yi EungJun
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+ * https://yona.io
+ **/
 
 package utils;
 
@@ -38,8 +24,10 @@ public class RouteUtil {
     public static final DiffRenderer$ diffRenderer = new DiffRenderer$();
 
     public static String getUrl(ResourceType resourceType, String resourceId) {
-        Long longId = Long.valueOf(resourceId);
+        return getUrl(resourceType, Long.valueOf(resourceId));
+    }
 
+    public static String getUrl(ResourceType resourceType, Long longId) {
         try {
             switch(resourceType) {
                 case ISSUE_POST:
@@ -58,6 +46,10 @@ public class RouteUtil {
                     return getUrl(ReviewComment.find.byId(longId));
                 case COMMENT_THREAD:
                     return getUrl(CommentThread.find.byId(longId));
+                case USER_AVATAR:
+                    return getUrl(User.find.byId(longId));
+                case PROJECT:
+                    return getUrl(Project.find.byId(longId));
                 default:
                     throw new IllegalArgumentException(
                             Resource.getInvalidResourceTypeMessage(resourceType));
@@ -160,6 +152,9 @@ public class RouteUtil {
     }
 
     public static String getUrl(CommentThread thread) {
+        if (thread == null) {
+            return "";
+        }
         return diffRenderer.urlToContainer(thread) + "#thread-" + thread.id;
     }
 

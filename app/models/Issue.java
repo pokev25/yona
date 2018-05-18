@@ -1,43 +1,34 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2012 NAVER Corp.
- * http://yobi.io
- *
- * @author yoon
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ *  Yona, 21st Century Project Hosting SW
+ *  <p>
+ *  Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+ *  https://yona.io
+ **/
 package models;
 
 import com.avaje.ebean.Ebean;
+import com.avaje.ebean.ExpressionList;
 import com.avaje.ebean.Page;
 import com.avaje.ebean.annotation.Formula;
+import controllers.routes;
 import jxl.Workbook;
 import jxl.format.Alignment;
 import jxl.format.Border;
 import jxl.format.BorderLineStyle;
 import jxl.format.Colour;
 import jxl.format.*;
+import jxl.format.VerticalAlignment;
 import jxl.write.*;
 import models.enumeration.ResourceType;
 import models.enumeration.State;
 import models.resource.Resource;
 import models.support.SearchCondition;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DateUtils;
 import org.apache.shiro.util.CollectionUtils;
 import play.data.Form;
 import play.data.format.Formats;
+import play.db.ebean.Model.Finder;
 import play.i18n.Messages;
 import utils.JodaDateUtil;
 
@@ -53,18 +44,15 @@ import java.util.regex.Pattern;
 @Entity
 @Table(uniqueConstraints = @UniqueConstraint(columnNames = {"project_id", "number"}))
 public class Issue extends AbstractPosting implements LabelOwner {
-    /**
-     * @author Yobi TEAM
-     */
     private static final long serialVersionUID = -2409072006294045262L;
 
     public static final Finder<Long, Issue> finder = new Finder<>(Long.class, Issue.class);
 
     public static final String DEFAULT_SORTER = "createdDate";
-    public static final String TO_BE_ASSIGNED = "TBA";
+    public static final String TO_BE_ASSIGNED = "";
     public static final Pattern ISSUE_PATTERN = Pattern.compile("#\\d+");
 
-    public State state;
+    public State state = State.OPEN;
 
     @Formats.DateTime(pattern = "yyyy-MM-dd")
     public Date dueDate;
@@ -87,6 +75,9 @@ public class Issue extends AbstractPosting implements LabelOwner {
     @OneToMany(cascade = CascadeType.ALL, mappedBy="issue")
     public List<IssueEvent> events;
 
+    @OneToMany(cascade = CascadeType.ALL, mappedBy = "issue")
+    public Set<IssueSharer> sharers = new LinkedHashSet<>();
+
     @ManyToMany(cascade = CascadeType.ALL)
     @JoinTable(
             name = "issue_voter",
@@ -107,6 +98,15 @@ public class Issue extends AbstractPosting implements LabelOwner {
         super(project, author, title, body);
         this.state = State.OPEN;
     }
+
+    @Transient
+    public String targetProjectId;
+
+    @Transient
+    public String parentIssueId;
+
+    @OneToOne
+    public Issue parent;
 
     public Issue() {
         super();
@@ -133,6 +133,17 @@ public class Issue extends AbstractPosting implements LabelOwner {
 
     public String assigneeName() {
         return ((assignee != null && assignee.user != null) ? assignee.user.name : null);
+    }
+
+    public Long milestoneId() {
+        if (milestone == null) {
+            return Milestone.NULL_MILESTONE_ID;
+        }
+        return milestone.id;
+    }
+
+    public boolean hasAssignee() {
+        return (assignee != null && assignee.user != null);
     }
 
     /**
@@ -195,9 +206,9 @@ public class Issue extends AbstractPosting implements LabelOwner {
 
     public static int countIssues(Long projectId, State state) {
         if (state == State.ALL) {
-            return finder.where().eq("project.id", projectId).findRowCount();
+            return finder.where().eq("project.id", projectId).isNull("parent.id").findRowCount();
         } else {
-            return finder.where().eq("project.id", projectId).eq("state", state).findRowCount();
+            return finder.where().eq("project.id", projectId).isNull("parent.id").eq("state", state).findRowCount();
         }
     }
 
@@ -228,55 +239,108 @@ public class Issue extends AbstractPosting implements LabelOwner {
         WritableWorkbook workbook;
         WritableSheet sheet;
 
-        WritableFont wf1 = new WritableFont(WritableFont.TIMES, 13, WritableFont.BOLD, false,
-                UnderlineStyle.SINGLE, Colour.BLUE_GREY, ScriptStyle.NORMAL_SCRIPT);
-        WritableCellFormat cf1 = new WritableCellFormat(wf1);
-        cf1.setBorder(Border.ALL, BorderLineStyle.DOUBLE);
-        cf1.setAlignment(Alignment.CENTRE);
-
-        WritableFont wf2 = new WritableFont(WritableFont.TAHOMA, 11, WritableFont.NO_BOLD, false, UnderlineStyle.NO_UNDERLINE, Colour.BLACK, ScriptStyle.NORMAL_SCRIPT);
-        WritableCellFormat cf2 = new WritableCellFormat(wf2);
-        cf2.setShrinkToFit(true);
-        cf2.setBorder(Border.ALL, BorderLineStyle.THIN);
-        cf2.setAlignment(Alignment.CENTRE);
-
-        DateFormat valueFormatDate = new DateFormat("yyyy-MM-dd HH:mm:ss");
-        WritableCellFormat cfDate = new WritableCellFormat(valueFormatDate);
-        cfDate.setFont(wf2);
-        cfDate.setShrinkToFit(true);
-        cfDate.setBorder(Border.ALL, BorderLineStyle.THIN);
-        cfDate.setAlignment(Alignment.CENTRE);
+        WritableCellFormat headerCellFormat = getHeaderCellFormat();
+        WritableCellFormat bodyCellFormat = getBodyCellFormat();
+        WritableCellFormat dateCellFormat = getDateCellFormat();
 
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         workbook = Workbook.createWorkbook(bos);
         sheet = workbook.createSheet(String.valueOf(JodaDateUtil.today().getTime()), 0);
 
-        String[] labalArr = {"ID", "STATE", "TITLE", "ASSIGNEE", "DATE"};
+        String[] titles = {"No",
+                Messages.get("issue.state"),
+                Messages.get("title"),
+                Messages.get("issue.assignee"),
+                Messages.get("issue.content"),
+                Messages.get("issue.label"),
+                Messages.get("issue.createdDate"),
+                Messages.get("issue.dueDate"),
+                Messages.get("milestone"),
+                "URL",
+                Messages.get("common.comment"),
+                Messages.get("common.comment.author"),
+                Messages.get("common.comment.created")};
 
-        for (int i = 0; i < labalArr.length; i++) {
-            sheet.addCell(new jxl.write.Label(i, 0, labalArr[i], cf1));
+        for (int i = 0; i < titles.length; i++) {
+            sheet.addCell(new jxl.write.Label(i, 0, titles[i], headerCellFormat));
             sheet.setColumnView(i, 20);
         }
-        for (int i = 1; i < issueList.size() + 1; i++) {
-            Issue issue = issueList.get(i - 1);
-            int colcnt = 0;
-            sheet.addCell(new jxl.write.Label(colcnt++, i, issue.id.toString(), cf2));
-            sheet.addCell(new jxl.write.Label(colcnt++, i, issue.state.toString(), cf2));
-            sheet.addCell(new jxl.write.Label(colcnt++, i, issue.title, cf2));
-            sheet.addCell(new jxl.write.Label(colcnt++, i, getAssigneeName(issue.assignee), cf2));
-            sheet.addCell(new jxl.write.DateTime(colcnt++, i, issue.createdDate, cfDate));
-        }
-        workbook.write();
+        int lineNumber = 0;
+        for (int idx = 1; idx < issueList.size() + 1; idx++) {
+            Issue issue = issueList.get(idx - 1);
+            List<IssueComment> comments = issue.comments;
 
+            lineNumber++;
+            int columnPos = 0;
+            String milestoneName = issue.milestone != null ? issue.milestone.title : "";
+            sheet.addCell(new jxl.write.Label(columnPos++, lineNumber, issue.getNumber().toString(), bodyCellFormat));
+            sheet.addCell(new jxl.write.Label(columnPos++, lineNumber, issue.state.toString(), bodyCellFormat));
+            sheet.addCell(new jxl.write.Label(columnPos++, lineNumber, issue.title, bodyCellFormat));
+            sheet.addCell(new jxl.write.Label(columnPos++, lineNumber, getAssigneeName(issue.assignee), bodyCellFormat));
+            sheet.addCell(new jxl.write.Label(columnPos++, lineNumber, issue.body, bodyCellFormat));
+            sheet.addCell(new jxl.write.Label(columnPos++, lineNumber, getIssueLabels(issue), bodyCellFormat));
+            sheet.addCell(new jxl.write.DateTime(columnPos++, lineNumber, issue.createdDate, dateCellFormat));
+            sheet.addCell(new jxl.write.Label(columnPos++, lineNumber, JodaDateUtil.geYMDDate(issue.dueDate), bodyCellFormat));
+            sheet.addCell(new jxl.write.Label(columnPos++, lineNumber, milestoneName, bodyCellFormat));
+            sheet.addCell(new jxl.write.Label(columnPos++, lineNumber, controllers.routes.IssueApp.issue(issue.project.owner, issue.project.name, issue.number).toString(), bodyCellFormat));
+            if (comments.size() > 0) {
+                for (int j = 0; j < comments.size(); j++) {
+                    sheet.addCell(new jxl.write.Label(columnPos, lineNumber + j, comments.get(j).contents, bodyCellFormat));
+                    sheet.addCell(new jxl.write.Label(columnPos+1, lineNumber + j, comments.get(j).authorName, bodyCellFormat));
+                    sheet.addCell(new jxl.write.DateTime(columnPos + 2, lineNumber + j, comments.get(j).createdDate, dateCellFormat));
+                }
+                lineNumber = lineNumber + comments.size() - 1;
+            }
+        }
+
+        workbook.write();
         try {
             workbook.close();
-        } catch (WriteException e) {
-            e.printStackTrace();
-        } catch (IOException e) {
+        } catch (WriteException | IOException e) {
             e.printStackTrace();
         }
 
         return bos.toByteArray();
+    }
+
+    private static String getIssueLabels(Issue issue) {
+        StringBuilder labels = new StringBuilder();
+        for(IssueLabel issueLabel: issue.getLabels()){
+            labels.append(issueLabel.name + ", ");
+        }
+        return labels.toString().replaceAll(", $", "");
+    }
+
+    private static WritableCellFormat getDateCellFormat() throws WriteException {
+        WritableFont baseFont= new WritableFont(WritableFont.ARIAL, 12, WritableFont.NO_BOLD, false, UnderlineStyle.NO_UNDERLINE, Colour.BLACK, ScriptStyle.NORMAL_SCRIPT);
+        DateFormat valueFormatDate = new DateFormat("yyyy-MM-dd HH:mm");
+        WritableCellFormat cellFormat = new WritableCellFormat(valueFormatDate);
+        cellFormat.setFont(baseFont);
+        cellFormat.setShrinkToFit(true);
+        cellFormat.setAlignment(Alignment.CENTRE);
+        cellFormat.setVerticalAlignment(VerticalAlignment.TOP);
+        return cellFormat;
+    }
+
+    private static WritableCellFormat getBodyCellFormat() throws WriteException {
+        WritableFont baseFont = new WritableFont(WritableFont.ARIAL, 12, WritableFont.NO_BOLD, false, UnderlineStyle.NO_UNDERLINE, Colour.BLACK, ScriptStyle.NORMAL_SCRIPT);
+        return getBodyCellFormat(baseFont);
+    }
+
+    private static WritableCellFormat getBodyCellFormat(WritableFont baseFont) throws WriteException {
+        WritableCellFormat cellFormat = new WritableCellFormat(baseFont);
+        cellFormat.setBorder(Border.NONE, BorderLineStyle.THIN);
+        cellFormat.setVerticalAlignment(VerticalAlignment.TOP);
+        return cellFormat;
+    }
+
+    private static WritableCellFormat getHeaderCellFormat() throws WriteException {
+        WritableFont headerFont = new WritableFont(WritableFont.ARIAL, 14, WritableFont.BOLD, false,
+                UnderlineStyle.NO_UNDERLINE, Colour.BLACK, ScriptStyle.NORMAL_SCRIPT);
+        WritableCellFormat headerCell = new WritableCellFormat(headerFont);
+        headerCell.setBorder(Border.ALL, BorderLineStyle.THIN);
+        headerCell.setAlignment(Alignment.CENTRE);
+        return headerCell;
     }
 
     private static String getAssigneeName(Assignee assignee) {
@@ -352,6 +416,18 @@ public class Issue extends AbstractPosting implements LabelOwner {
         return AbstractPosting.findByNumber(finder, project, number);
     }
 
+    public static List<Issue> findByMilestone(Milestone milestone) {
+        return finder.where().eq("milestone.id", milestone.id).findList();
+    }
+
+    public static List<Issue> findClosedIssuesByMilestone(Milestone milestone) {
+        return finder.where().eq("milestone.id", milestone.id).eq("state", State.CLOSED).findList();
+    }
+
+    public static List<Issue> findOpenIssuesByMilestone(Milestone milestone) {
+        return finder.where().eq("milestone.id", milestone.id).eq("state", State.OPEN).findList();
+    }
+
     @Transient
     public Set<User> getWatchers() {
         return getWatchers(true);
@@ -393,6 +469,24 @@ public class Issue extends AbstractPosting implements LabelOwner {
                 .eq("project.id", project.id)
                 .eq("state", State.OPEN)
                 .ge("createdDate", JodaDateUtil.before(days)).order().desc("createdDate").findList();
+    }
+
+    public static List<Issue> findByProject(Project project, String filter) {
+        ExpressionList<Issue> el = finder.where()
+                .eq("project.id", project.id);
+        if(StringUtils.isNotEmpty(filter)){
+            el.icontains("title", filter);
+        }
+        return el.order().desc("createdDate").findList();
+    }
+
+    public static List<Issue> findByProject(Project project, String filter, int limit) {
+        ExpressionList<Issue> el = finder.where()
+                .eq("project.id", project.id);
+        if(StringUtils.isNotEmpty(filter)){
+            el.icontains("title", filter);
+        }
+        return el.setMaxRows(limit).order().desc("createdDate").findList();
     }
 
     public static Page<Issue> findIssuesByState(int size, int pageNum, State state) {
@@ -512,7 +606,7 @@ public class Issue extends AbstractPosting implements LabelOwner {
     }
 
     public Boolean isOverDueDate(){
-        return (JodaDateUtil.ago(dueDate).getMillis() > 0);
+        return isOpen() && (JodaDateUtil.ago(dueDate).getMillis() > 0);
     }
 
     public String until(){
@@ -555,6 +649,63 @@ public class Issue extends AbstractPosting implements LabelOwner {
                 .findRowCount();
     }
 
+    public static List<Issue> findByParentIssueId(Long parentIssueId){
+        return finder.where()
+                .eq("parent.id", parentIssueId)
+                .findList();
+    }
 
+    public boolean hasChildIssue(){
+        return finder.where()
+                .eq("parent.id", this.id)
+                .setMaxRows(1)
+                .findRowCount() > 0;
+    }
 
+    public boolean hasParentIssue(){
+        return parent != null && finder.where()
+                .isNotNull("parent.id")
+                .findRowCount() > 0;
+    }
+
+    public static List<Issue> findByParentIssueIdAndState(Long parentIssueId, State state){
+        return finder.where()
+                .eq("parent.id", parentIssueId)
+                .eq("state", state)
+                .findList();
+    }
+
+    public static int countByParentIssueIdAndState(Long parentIssueId, State state){
+        return finder.where()
+                .eq("parent.id", parentIssueId)
+                .eq("state", state)
+                .findRowCount();
+    }
+
+    public static int countOpenIssuesByUser(User user) {
+        return finder.where()
+                .eq("assignee.user.id", user.id)
+                .eq("state", State.OPEN)
+                .findRowCount();
+    }
+
+    public IssueSharer findSharerByUserId(Long id){
+        for (IssueSharer sharer : sharers) {
+            if (sharer.user.id.equals(id)) {
+                return sharer;
+            }
+        }
+        return null;
+    }
+
+    public List<IssueSharer> getSortedSharer() {
+        return new ArrayList<>(sharers);
+    }
+
+    public static int getCountOfMentionedOpenIssues(Long userId) {
+        return finder.where()
+                .in("id", Mention.getMentioningIssueIds(userId))
+                .eq("state", State.OPEN)
+                .findRowCount();
+    }
 }

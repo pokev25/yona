@@ -1,23 +1,9 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2012 NAVER Corp.
- * http://yobi.io
- *
- * @author Sangcheol Hwang
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+ * https://yona.io
+ **/
 package controllers;
 
 import actions.NullProjectCheckAction;
@@ -32,6 +18,7 @@ import models.enumeration.Operation;
 import models.enumeration.ResourceType;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.eclipse.jgit.lib.ObjectId;
 import play.data.Form;
 import play.db.ebean.Transactional;
 import play.libs.Json;
@@ -53,6 +40,8 @@ import java.io.IOException;
 import java.util.*;
 
 import static com.avaje.ebean.Expr.icontains;
+import static controllers.MigrationApp.composePlainCommentsJson;
+import static play.libs.Json.toJson;
 
 public class BoardApp extends AbstractPostingApp {
     public static class SearchCondition extends AbstractPostingApp.SearchCondition {
@@ -180,6 +169,20 @@ public class BoardApp extends AbstractPostingApp {
             preparedBodyText = BareRepository.readREADME(project);
         }
 
+        if(issueTemplateEditRequested()){
+            preparedBodyText = StringUtils.defaultIfBlank(project.getIssueTemplate(), "");
+        }
+
+        if (textFileEditRequested()) {
+            boolean isAllowedToFileEdit =
+                    AccessControl.isProjectResourceCreatable(UserApp.currentUser(), project, ResourceType.COMMIT);
+            if(!isAllowedToFileEdit){
+                return forbidden(ErrorViews.Forbidden.render("error.forbidden", project));
+            }
+            preparedBodyText = GitUtil.getReadTextFile(project,
+                    getBranchNameFromQueryString(), request().getQueryString("path"));
+        }
+
         return ok(create.render("post.new", new Form<>(Posting.class), project, isAllowedToNotice, preparedBodyText));
     }
 
@@ -189,6 +192,18 @@ public class BoardApp extends AbstractPostingApp {
 
     private static boolean readmeEditRequested() {
         return request().getQueryString("readme") != null;
+    }
+
+    private static boolean issueTemplateEditRequested() {
+        return request().getQueryString("issueTemplate") != null;
+    }
+
+    private static boolean textFileEditRequested() {
+        return request().getQueryString("path") != null;
+    }
+
+    private static String getBranchNameFromQueryString() {
+        return request().getQueryString("branch");
     }
 
     @Transactional
@@ -222,6 +237,18 @@ public class BoardApp extends AbstractPostingApp {
                 commitReadmeFile(project, post);
             }
         }
+
+        if (post.issueTemplate.equals("true")) {
+            commitIssueTemplateFile(project, post);
+            return redirect(routes.ProjectApp.project(project.owner, projectName));
+        }
+
+        if(StringUtils.isNotEmpty(post.path) && UserApp.currentUser().isMemberOf(project)){
+            GitUtil.commitTextFile(project, post.branch, post.path,
+                    LineEnding.changeLineEnding(post.body, post.lineEnding), post.title);
+            return redirect(routes.CodeApp.codeBrowserWithBranch(project.owner, project.name, post.branch, HttpUtil.getEncodeEachPathName(post.path)));
+        }
+
         post.save();
         attachUploadFilesToPost(post.asResource());
         NotificationEvent.afterNewPost(post);
@@ -235,7 +262,19 @@ public class BoardApp extends AbstractPostingApp {
     private static void commitReadmeFile(Project project, Posting post){
         BareCommit bare = new BareCommit(project, UserApp.currentUser());
         try{
-            bare.commitTextFile("README.md", post.body, post.title);
+            ObjectId objectId = bare.commitTextFile("README.md", post.body, post.title);
+            play.Logger.debug("Online Commit: README " + project.name + ":" + objectId);
+        } catch (IOException e) {
+            e.printStackTrace();
+            play.Logger.error(e.getMessage());
+        }
+    }
+
+    private static void commitIssueTemplateFile(Project project, Posting post){
+        BareCommit bare = new BareCommit(project, UserApp.currentUser());
+        try{
+            ObjectId objectId = bare.commitTextFile("ISSUE_TEMPLATE.md", post.body, post.title);
+            play.Logger.debug("Online Commit: ISSUE_TEMPLATE " + project.name + ":" + objectId);
         } catch (IOException e) {
             e.printStackTrace();
             play.Logger.error(e.getMessage());
@@ -248,14 +287,19 @@ public class BoardApp extends AbstractPostingApp {
         Posting post = Posting.findByNumber(project, number);
 
         if(post.readme && RepositoryService.VCS_GIT.equals(project.vcs)){
-            post.body = BareRepository.readREADME(project);
+            post.body = StringUtils.defaultString(BareRepository.readREADME(project));
         }
 
         if (request().getHeader("Accept").contains("application/json")) {
             ObjectNode json = Json.newObject();
             json.put("title", post.title);
-            json.put("body", post.body);
+            json.put("type", post.asResource().getType().toString());
             json.put("author", post.authorLoginId);
+            json.put("authorName", post.authorName);
+            json.put("created_at", post.createdDate.getTime());
+            json.put("body", post.body);
+            json.put("attachments", toJson(Attachment.findByContainer(post.asResource())));
+            json.put("comments", toJson(composePlainCommentsJson(post, ResourceType.NONISSUE_COMMENT)));
             return ok(json);
         }
 
@@ -269,7 +313,7 @@ public class BoardApp extends AbstractPostingApp {
         Project project = Project.findByOwnerAndProjectName(owner, projectName);
         Posting posting = Posting.findByNumber(project, number);
 
-        if (!AccessControl.isAllowed(UserApp.currentUser(), posting.asResource(), Operation.UPDATE)) {
+        if (!AccessControl.isAllowed(UserApp.currentUser(), posting.asResource(), Operation.READ)) {
             return forbidden(ErrorViews.Forbidden.render("error.forbidden", project));
         }
 
@@ -310,7 +354,7 @@ public class BoardApp extends AbstractPostingApp {
             public void run() {
                 post.comments = original.comments;
                 if(isSelectedToSendNotificationMail() || !original.isAuthoredBy(UserApp.currentUser())){
-                    NotificationEvent.afterNewPost(post);
+                    NotificationEvent.afterUpdatePosting(original.body, post);
                 }
             }
         };
@@ -336,6 +380,7 @@ public class BoardApp extends AbstractPostingApp {
         Posting posting = Posting.findByNumber(project, number);
         Call redirectTo = routes.BoardApp.posts(project.owner, project.name, 1);
 
+        NotificationEvent.afterResourceDeleted(posting, UserApp.currentUser());
         return delete(posting, posting.asResource(), redirectTo);
     }
 
@@ -361,14 +406,20 @@ public class BoardApp extends AbstractPostingApp {
         }
 
         final PostingComment comment = commentForm.get();
-        PostingComment existingComment = PostingComment.find.where().eq("id", comment.id).findUnique();
 
         if (commentForm.hasErrors()) {
             flash(Constants.WARNING, "common.comment.empty");
             return redirect(routes.BoardApp.post(project.owner, project.name, number));
         }
 
+        Comment savedComment = saveComment(project, posting, comment);
+
+        return redirect(RouteUtil.getUrl(savedComment));
+    }
+
+    private static Comment saveComment(Project project, Posting posting, PostingComment comment) {
         Comment savedComment;
+        PostingComment existingComment = PostingComment.find.where().eq("id", comment.id).findUnique();
         if (existingComment != null) {
             existingComment.contents = comment.contents;
             savedComment = saveComment(existingComment, getContainerUpdater(posting, comment));
@@ -376,17 +427,18 @@ public class BoardApp extends AbstractPostingApp {
                 NotificationEvent.afterCommentUpdated(savedComment);
             }
         } else {
+            comment.projectId = project.id;
             savedComment = saveComment(comment, getContainerUpdater(posting, comment));
             NotificationEvent.afterNewComment(savedComment);
         }
-
-        return redirect(RouteUtil.getUrl(savedComment));
+        return savedComment;
     }
 
     private static Runnable getContainerUpdater(final Posting posting, final PostingComment comment) {
         return new Runnable() {
             @Override
             public void run() {
+                posting.updatedDate = JodaDateUtil.now();
                 comment.posting = posting;
             }
         };

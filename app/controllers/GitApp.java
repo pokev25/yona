@@ -20,14 +20,9 @@
  */
 package controllers;
 
-import java.io.IOException;
-
-import javax.servlet.ServletException;
-
+import com.github.zafarkhaja.semver.Version;
 import models.Project;
 import models.enumeration.Operation;
-
-import com.github.zafarkhaja.semver.Version;
 import play.api.i18n.Lang;
 import play.i18n.Messages;
 import play.mvc.Controller;
@@ -39,6 +34,11 @@ import utils.AccessControl;
 import utils.BasicAuthAction;
 import utils.Config;
 
+import javax.servlet.ServletException;
+import java.io.IOException;
+
+import static utils.HttpUtil.decodeUrlString;
+
 public class GitApp extends Controller {
 
     public static boolean isSupportedService(String service) {
@@ -49,8 +49,14 @@ public class GitApp extends Controller {
     private static boolean isAllowed(Project project, String service) throws
             UnsupportedOperationException, IOException, ServletException {
         Operation operation = Operation.UPDATE;
+
         if (service.equals("git-upload-pack")) {
             operation = Operation.READ;
+        }
+
+        // Only members can access code?
+        if(project.isCodeAccessibleMemberOnly && !project.hasMember(UserApp.currentUser())) {
+            operation = Operation.UPDATE;
         }
 
         PlayRepository repository = RepositoryService.getRepository(project);
@@ -114,7 +120,7 @@ public class GitApp extends Controller {
                             "git.error.permission", user.loginId, ownerName, projectName);
                 } else {
                     message = Messages.get(Lang.defaultLang(),
-                            "git.error.permission", user.loginId, ownerName, projectName);
+                            "git.error.notAllowedCharset", user.loginId, ownerName, projectName);
                 }
                 response().setHeader("Content-Type", contentType);
                 return forbidden(message);
@@ -143,7 +149,7 @@ public class GitApp extends Controller {
             // but we don't support that.
             return forbidden("Unsupported service: getanyfile");
         }
-        return GitApp.service(ownerName, projectName, service, true);
+        return GitApp.service(ownerName, decodeUrlString(projectName), service, true);
     }
 
     @With(BasicAuthAction.class)

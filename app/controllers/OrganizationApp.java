@@ -1,34 +1,27 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2013 NAVER Corp.
- * http://yobi.io
- *
- * @author Keesun Baik
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+ * https://yona.io
+ **/
 package controllers;
 
+import com.avaje.ebean.ExpressionList;
+import com.avaje.ebean.Page;
 import controllers.annotation.AnonymousCheck;
+import controllers.annotation.GuestProhibit;
+import controllers.PullRequestApp.SearchCondition;
+import controllers.PullRequestApp.Category;
 import models.*;
 import models.enumeration.Operation;
 import models.enumeration.RequestState;
 import models.enumeration.RoleType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.commons.collections.CollectionUtils;
 import play.data.Form;
 import play.data.validation.Validation;
+import play.data.validation.ValidationError;
 import play.db.ebean.Transactional;
 import play.libs.Json;
 import play.mvc.Controller;
@@ -40,6 +33,7 @@ import views.html.organization.deleteForm;
 import views.html.organization.members;
 import views.html.organization.setting;
 import views.html.organization.view;
+import views.html.organization.group_pullrequest_list;
 
 import javax.servlet.ServletException;
 import javax.validation.ConstraintViolation;
@@ -55,6 +49,31 @@ import static utils.LogoUtil.*;
  */
 @AnonymousCheck
 public class OrganizationApp extends Controller {
+
+    @AnonymousCheck(requiresLogin = false, displaysFlashMessage = true)
+    public static Result organizationPullRequests(String organizationName, String category) {
+
+        Organization organization = Organization.findByName(organizationName);
+        if (organization == null) {
+            return notFound(ErrorViews.NotFound.render("error.notfound.organization"));
+        }
+
+        SearchCondition condition = Form.form(SearchCondition.class).bindFromRequest().get();
+        if (category.equals("open")) {
+            condition.setOrganization(organization).setCategory(Category.OPEN);
+        } else {
+            condition.setOrganization(organization).setCategory(Category.CLOSED);
+        }
+        Page<PullRequest> page = PullRequest.findPagingList(condition);
+
+        return ok(group_pullrequest_list.render("title.pullrequest",  organization, page, condition, category));
+    }
+
+    @AnonymousCheck(requiresLogin = false, displaysFlashMessage = true)
+    public static Result organizationClosedPullRequests(String organizationName) {
+        return organizationPullRequests(organizationName, "closed");
+    }
+
     /**
      * show New Group page
      * @return {@link Result}
@@ -70,8 +89,15 @@ public class OrganizationApp extends Controller {
      * @throws Exception
      */
     @AnonymousCheck(requiresLogin = true, displaysFlashMessage = true)
+    @GuestProhibit
     public static Result newOrganization() throws Exception {
         Form<Organization> newOrgForm = form(Organization.class).bindFromRequest();
+        if (newOrgForm.hasErrors()) {
+            play.Logger.warn("newOrgForm.errors().keySet() " + newOrgForm.error("name").messages());
+            flash(Constants.WARNING, newOrgForm.error("name").message());
+            return badRequest(create.render("title.newOrganization", newOrgForm));
+        }
+
         validate(newOrgForm);
         if (newOrgForm.hasErrors()) {
             flash(Constants.WARNING, newOrgForm.error("name").message());
@@ -87,6 +113,8 @@ public class OrganizationApp extends Controller {
     }
 
     private static void validate(Form<Organization> newOrgForm) {
+        Organization organization = newOrgForm.get();
+        play.Logger.error("org: " + organization.name);
         Set<ConstraintViolation<Organization>> results = Validation.getValidator().validate(newOrgForm.get());
         if (!results.isEmpty()) {
             newOrgForm.reject("name", "organization.name.alert");
@@ -123,11 +151,11 @@ public class OrganizationApp extends Controller {
             return result;
         }
 
-        User user = User.findByLoginId(addMemberForm.get().loginId);
+        User targetUser = User.findByLoginId(addMemberForm.get().loginId);
         Organization organization = Organization.findByName(organizationName);
-        OrganizationUser.assignRole(user.id, organization.id, RoleType.ORG_MEMBER.roleType());
+        OrganizationUser.assignRole(targetUser.id, organization.id, RoleType.ORG_MEMBER.roleType());
         organization.cleanEnrolledUsers();
-        NotificationEvent.afterOrganizationMemberRequest(organization, user, RequestState.ACCEPT);
+        NotificationEvent.afterOrganizationMemberRequest(organization, targetUser, RequestState.ACCEPT);
 
         return redirect(routes.OrganizationApp.members(organizationName));
     }
@@ -138,6 +166,11 @@ public class OrganizationApp extends Controller {
 
         if (addMemberForm.hasErrors() || userToBeAdded.isAnonymous()) {
             flash(Constants.WARNING, "organization.member.unknownUser");
+            return redirect(routes.OrganizationApp.members(organizationName));
+        }
+
+        if (userToBeAdded.isGuest) {
+            flash(Constants.WARNING, "error.forbidden.to.guest.user");
             return redirect(routes.OrganizationApp.members(organizationName));
         }
 
@@ -351,6 +384,8 @@ public class OrganizationApp extends Controller {
 
         Organization original = Organization.find.byId(modifiedOrganization.id);
         original.updateWith(modifiedOrganization);
+        UserApp.currentUser().updateFavoriteOrganization(modifiedOrganization);
+        FavoriteOrganization.updateFavoriteOrganization(modifiedOrganization);
 
         return redirect(routes.OrganizationApp.settingForm(modifiedOrganization.name));
     }
@@ -446,5 +481,19 @@ public class OrganizationApp extends Controller {
         }
 
         return new ValidationResult(okWithLocation(routes.OrganizationApp.organization(organization.name).url()), false);
+    }
+
+    @GuestProhibit
+    public static Result orgList(String query, int pageNum){
+        if(Application.HIDE_PROJECT_LISTING){
+            return forbidden(ErrorViews.Forbidden.render("error.auth.unauthorized.waringMessage"));
+        }
+
+        if (pageNum < 1) {
+            return notFound(ErrorViews.NotFound.render("error.notfound"));
+        }
+        Page<Organization> orgs = Organization.findByNameLike(query).getPage(pageNum-1);
+
+        return ok(views.html.organization.list.render("title.projectList", orgs, query));
     }
 }

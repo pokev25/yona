@@ -1,23 +1,9 @@
 @**
- * Yobi, Project Hosting SW
- *
- * Copyright 2014 NAVER Corp.
- * http://yobi.io
- *
- * @author Deokhong Kim
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- **@
+* Yona, 21st Century Project Hosting SW
+*
+* Copyright Yona & Yobi Authors & NAVER Corp.
+* https://yona.io
+**@
 @(menuType:utils.MenuType, project:Project, org:Organization)
 
 @import utils._
@@ -40,11 +26,11 @@
     }
 }
 
-<div class="unsupported">
+<div class="unsupported hidden">
     <div class="unsupported-inner">
         <p id="unsupported-content">
-            <i class="yobicon-alert"></i>
-            @Html(Messages("error.unsupported.ie"))
+            <!-- <i class="yobicon-alert"></i>
+            @Html(Messages("error.unsupported.ie")) -->
         </p>
     </div>
 </div>
@@ -52,13 +38,15 @@
     <div class="gnb-inner">
         <ul class="gnb-nav">
             <li>
-                <a href="@routes.Application.index()" class="logo logo-title">Y</a>
+                <a href="@routes.Application.index()" class="logo logo-letter">Y</a>
             </li>
-            <li class="@isActiveMenu(MenuType.PROJECTS)">
-                <a href="@routes.ProjectApp.projects()">@Messages("title.projectList")</a>
-            </li>
+            @if(!Application.HIDE_PROJECT_LISTING && !UserApp.currentUser().isGuest){
+                <li class="@isActiveMenu(MenuType.PROJECTS)">
+                    <a href="@routes.ProjectApp.projects()" class="show-progress-bar">@Messages("title.list")</a>
+                </li>
+                <li class="divider"></li>
+            }
             @if(appFeedbackUrl){
-            <li class="divider"></li>
             <li>
                 <a href="@appFeedbackUrl" target="_blank">@Messages("title.yobi.feedback")</a>
             </li>
@@ -71,7 +59,7 @@
                     <div class="btn-group">
                         <button class="ybtn dropdown-toggle" data-toggle="dropdown" type="button" id="gnb-search-scope-title">
                             @if(project != null) {
-                                @Messages("search.scope.porject")
+                                @Messages("search.scope.project")
                             } else {
                                 @Messages("search.scope.group")
                             }
@@ -80,7 +68,7 @@
                             @if(project != null) {
                             <li>
                                 <a href="#" data-toggle="search-scope" data-action="@routes.SearchApp.searchInAProject(project.owner, project.name)">
-                                    @Messages("search.scope.porject")
+                                    @Messages("search.scope.project")
                                 </a>
                             </li>
                             @if(project.hasGroup) {
@@ -92,17 +80,24 @@
                             }
                             } 
                             @if(org != null) {
-                            <li>
-                                <a href="#" data-toggle="search-scope" data-action="@routes.SearchApp.searchInAGroup(org.name)">
-                                    @Messages("search.scope.group")
-                                </a>
-                            </li>
+                                @if(Application.HIDE_PROJECT_LISTING || UserApp.currentUser().isGuest) {
+                                    @if(UserApp.currentUser().isMemberOf(org) || UserApp.currentUser().isAdminOf(org)){
+                                        <li>
+                                            <a href="#" data-toggle="search-scope" data-action="@routes.SearchApp.searchInAGroup(org.name)">
+                                            @Messages("search.scope.group")
+                                            </a>
+                                        </li>
+                                    }
+                                }
+
                             }
+                            @if(!Application.HIDE_PROJECT_LISTING && !UserApp.currentUser().isGuest || UserApp.currentUser().isSiteManager) {
                             <li>
                                 <a href="#" data-toggle="search-scope" data-action="@routes.SearchApp.searchInAll()">
                                     @Messages("search.scope.all")
                                 </a>
                             </li>
+                            }
                         </ul>
                     </div>
                     }
@@ -113,6 +108,6 @@
                 </form>
             </li>
         </ul>
-        @common.usermenu(null)
+        @common.usermenu()
     </div>
 </header>

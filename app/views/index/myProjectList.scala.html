@@ -1,53 +1,61 @@
 @**
-* Yobi, Project Hosting SW
+* Yona, 21st Century Project Hosting SW
 *
-* Copyright 2012 NAVER Corp.
-* http://yobi.io
-*
-* @author Hwi Ahn
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+* Copyright Yona & Yobi Authors & NAVER Corp.
+* https://yona.io
 **@
-@(currentUser:models.User)
+@(currentUser:User)
 @import utils.TemplateHelper._
 
-@displayProjects(title:String, projects:List[Project]) = {
-<ul class="tab-pane unstyled my-project-item" id="@title">
-@for(project <- projects){
-    <li class="my-list-item" data-item="my-item" data-value="@if(project.owner != currentUser.loginId) {@project.owner / }@project.name">
-    @if(hasProjectLogo(project)){<img src="@urlToProjectLogo(project)" alt="@project.name"/>} else{<span class="dummy-25px"> </span>}
-        <a href="@routes.ProjectApp.project(project.owner, project.name)" class="project-name">
-            <strong>@project.name @if(project.isPrivate){ <i class="yobicon-lock yobicon-small"></i> }</strong>
-        </a>
-        <span class="gray-txt small-font">of <a href="@routes.UserApp.userInfo(project.owner)" >@project.owner</a></span>
-    </li>
+@displayProjects(title:String, projects:List[Project], isActive:Boolean = false) = {
+    @if(projects.isEmpty) {
+        <div id="@title" class="no-result tab-pane user-ul @if(isActive){active}">@Messages("title.no.results")</div>
+    } else {
+        <ul class="tab-pane user-ul @if(isActive){active}" id="@title">
+        @for(project <- projects){
+            @myProjectList_partial(project, false)
+        }
+        </ul>
+    }
 }
-</ul>
-}
-@defining(currentUser.getVisitedProjects){ visitedProjects =>
-<ul class="tab-pane unstyled my-project-item active" id="recentlyVisited">
-@for(project <- visitedProjects){
-    <li class="my-list-item" data-item="my-item" data-value="@if(project.owner != currentUser.loginId) {@project.owner / }@project.name">
-        @if(hasProjectLogo(project)){<img src="@urlToProjectLogo(project)" alt="@project.name"/>} else{<span class="dummy-25px"> </span>}<a href="@routes.ProjectApp.project(project.owner, project.name)" class="project-name">
-            <strong>@project.name @if(project.isPrivate){ <i class="yobicon-lock yobicon-small"></i> }</strong>
-        </a>
-        <span class="gray-txt small-font">of <a href="@routes.UserApp.userInfo(project.owner)" >@project.owner</a></span>
-    </li>
-}
-</ul>    
-}
+        <div>
+            <div class="search-result">
+                <div class="tab-pane myproject-list-wrap active" >
+                    <div class="group">
+                        <input class="search-input project-search" type="text" id="query" autocomplete="off" placeholder="@Messages("title.type.name")">
+                        <span class="bar"></span>
+                    </div>
+                    <div class="subtab-wrap subtab-group">
+                        <ul class="nav-subtab unstyled">
+                            <li class="active">
+                                <a href="#recentlyVisited" data-toggle="tab">
+                                @Messages("title.recently.visited")
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#createdByMe" data-toggle="tab">
+                                @Messages("title.createdByMe")
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#watching" data-toggle="tab">
+                                @Messages("title.watching")
+                                </a>
+                            </li>
+                            <li>
+                                <a href="#joinmember" data-toggle="tab">
+                                @Messages("title.joinmember")
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="tab-content">
+                        @views.html.index.displayProjectsWithFavored("recentlyVisited", currentUser.getVisitedProjects, currentUser.getFavoriteProjects, true)
+                        @displayProjects("watching", currentUser.getWatchingProjects("name ASC"))
+                        @displayProjects("createdByMe", Project.findProjectsCreatedByUser(currentUser.loginId, "createdDate desc"))
+                        @displayProjects("joinmember", Project.findProjectsJustMemberAndNotOwner(currentUser, "name ASC"))
+                    </div>
+                </div>
+            </div>
+        </div>
 
-@orderString = @{"name ASC"}
-@displayProjects("watching", currentUser.getWatchingProjects(orderString))
-@displayProjects("createdByMe", Project.findProjectsCreatedByUser(currentUser.loginId, orderString))
-@displayProjects("joinmember", Project.findProjectsJustMemberAndNotOwner(currentUser, orderString))

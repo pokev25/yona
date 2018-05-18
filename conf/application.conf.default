@@ -6,6 +6,12 @@
 # The name of your website
 application.siteName="Yona"
 
+# Application Context
+# ~~~~~~~~~~~~~~~~~~~
+# If you want your own application context root, you can set it.
+# Don't miss first / (slash) letter!
+# application.context = /myroot
+
 # Anonymous access
 # ~~~~~~~~~~~~~~~~
 # This site allows anonymous access. (default: true)
@@ -14,6 +20,60 @@ application.siteName="Yona"
 # NOTE: Even if this is false, anyone can create a account freely. If you don't
 # want to allow that, set signup.require.confirm to true.
 application.allowsAnonymousAccess=true
+
+# Guest User Id Rule
+# ~~~~~~~~~~~~~
+# If login id is created with following prefixes,
+# Yona treat that user is Guest User.
+# Guest user is extremely restricted in use of Yona.
+# They can not see any project listing of instance and
+# only create own account's projects.
+# In other words, they cannot create organization.
+# If multiple prefixes are needed, user , (comma)
+#
+# eg.
+# "PT_, GUEST_"
+
+application.guest.user.login.id.prefix = ""
+
+#
+# Signup options
+# ~~~~~~~~~~~~~~
+
+# If you wants to make the user available to use yona
+# after the server administrator approved,uncomment below
+#
+# signup.require.admin.confirm = true
+
+# If you only want to allow for signing up in specific email domains,
+# use the following option.
+# application.allowed.sending.mail.domains = "gmail.com, your-company.com"
+# And "" is option for no restriction.
+#
+# application.allowed.sending.mail.domains = ""
+
+# If following email verification option is true, all user will be locked when it sign-up,
+# until user click the verification link of verification confirm mail
+#
+# application.use.email.verification = true
+
+# Login form custom input message
+# application.login.page.loginId.placeholder = "Use Emp. no as login id"
+# application.login.page.password.placeholder = ""
+
+# If you enable to use social login or email verification, set followings
+play-easymail {
+  from {
+    # Mailing from address
+    email="projects.yona@gmail.com"
+
+    # Mailing name
+    name="yona-no-reply"
+
+    # Seconds between sending mail through Akka (defaults to 1)
+    # delay=1
+  }
+}
 
 # Notification
 # ~~~~~
@@ -25,6 +85,9 @@ notification.bymail.enabled = true
 # ~~~~~
 # The secret key is used to secure cryptographics functions.
 # If you deploy your application to several instances be sure to use the same key!
+#
+# If you want to reset admin account, set this value to default.
+# Default: "VA2v:_I=h9>?FYOH:@ZhW]01P<mWZAKlQ>kk>Bo`mdCiA>pDw64FcBuZdDh<47Ew"
 application.secret="VA2v:_I=h9>?FYOH:@ZhW]01P<mWZAKlQ>kk>Bo`mdCiA>pDw64FcBuZdDh<47Ew"
 
 # The application languages
@@ -113,7 +176,7 @@ application.feedback.url="https://github.com/yona-projects/yona/issues"
 # Mailer
 # ~~~~~~
 # You have to configure SMTP to send mails.
-# Example settings, it assume that you use gamil smtp
+# Example settings, it assume that you use gmail smtp
 smtp.host = smtp.gmail.com
 smtp.port = 465
 smtp.ssl = true
@@ -162,9 +225,6 @@ imap.folder = inbox
 %prod.application.log=INFO
 %prod.application.mode=prod
 
-#if you want to use sign-up is confirmed by site admin, uncomment below
-#signup.require.confirm = true
-
 # User uploaded temporary files cleanup schedule (sec, default 24hour: 24*60*60 = 86400)
 # application.temporaryfiles.keep-up.time = 86400
 
@@ -196,7 +256,7 @@ application.update.check.use = true
 application.update.repositoryUrl = "https://github.com/yona-projects/yona"
 # A format to construct the url to latest Yona release. "%s" is a format
 # specifier for Yona version to download like "0.5.7".
-application.update.releaesUrlFormat = "https://github.com/yona-projects/yona/releases/tag/v%s"
+application.update.releaseUrlFormat = "https://github.com/yona-projects/yona/releases/tag/v%s"
 
 # customize play default thread pool size
 # see: https://www.playframework.com/documentation/2.3.x/ThreadPools
@@ -242,3 +302,92 @@ application.noreferrer = true
 
 # Display private repositories in the list
 application.displayPrivateRepositories = false
+
+# Hide project listing for security
+application.hide.project.listing = false
+
+# choice: "public" or "private"
+# default: "public"
+project.default.scope.when.create = "public"
+
+# Display user email
+# default: true
+application.show.user.email = true
+
+# Google Analytics
+# ~~~~~~~~~~~~~~~~~
+# This data is used to better understand how users interact with the Web UI which gives us valuable information
+# in improving Yona user experience. To disable this for any reason, set the following option to false.
+application.send.yona.usage = true
+
+# Github Migration
+# ~~~~~~~~~~~~~~~~~
+# User can migrate their own projects to github
+#
+github.allow.migration = false
+github.client.id = "TYPE YOUR GITHUB CILENT ID"
+github.client.secret = "TYPE YOUR GITHUB CILENT SECRET"
+
+# Attachment Upload File Size Limit
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# 2,147,483,454 bytes = 2Gb
+application.maxFileSize = 2147483454
+
+# Project Creation Menu Settings
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Default: "code, issue, pullRequest, review, milestone, board"
+project.creation.default.menus = "issue, milestone, board"
+
+# Social Login Support
+# ~~~~~~~~~~~~~~~~~~~~
+# Social login settings for Yona
+# Detail settings are described at social-login.conf
+
+# Prevent using Yona's own login system
+application.use.social.login.only = false
+
+# If true, update local user name with social login account name
+application.use.social.login.name.sync = false
+
+# Allowed OAuth social login provider
+# choice: github, google
+application.social.login.support = "github, google"
+
+# Custom link to navigation bar
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# If you fill the name of link and url,
+# custom menu will be appeared at right upper side navbar
+application.navbar.custom {
+    link {
+        name=""
+        url=""
+    }
+}
+
+# LDAP Login Support
+# ~~~~~~~~~~~~~~~~~
+#
+application.use.ldap.login.supoort = false
+ldap {
+    host = "ldap.forumsys.com"
+    # default: ldap.port=389, ldaps.port=636
+    port = 389
+    # protocol: ldap or ldaps. If you want to use SSL/TLS, use 'ldaps'
+    protocol = "ldap"
+    baseDN = "ou=scientists,dc=example,dc=com"
+    # If your ldap service's distinguishedName is 'CN=username,OU=user,DC=abc,DC=com', postfix is 'OU=xxx,DC=abc,DC=com'
+    distinguishedNamePostfix = "OU=user,DC=abc,DC=com"
+    loginProperty = "sAMAccountName"
+    displayNameProperty = "displayName"
+    userNameProperty = "CN"
+    emailProperty = "mail"
+    options {
+      # If your LDAP configuration support email login
+      useEmailBaseLogin = false
+      fallbackToLocalLogin = false
+      # If your LDAP configuration support English Name attribute
+      englishNameAttributeName = "givenName"
+    }
+}
+
+include "social-login.conf"

@@ -20,6 +20,9 @@
  */
 
 import com.avaje.ebean.Ebean;
+import com.feth.play.module.pa.PlayAuthenticate;
+import com.feth.play.module.pa.exceptions.AccessDeniedException;
+import com.feth.play.module.pa.exceptions.AuthException;
 import com.typesafe.config.ConfigFactory;
 import controllers.SvnApp;
 import controllers.UserApp;
@@ -27,7 +30,6 @@ import controllers.routes;
 import mailbox.MailboxService;
 import models.*;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.http.impl.cookie.DateUtils;
 import play.Application;
 import play.Configuration;
 import play.GlobalSettings;
@@ -35,11 +37,8 @@ import play.Play;
 import play.api.mvc.Handler;
 import play.data.Form;
 import play.libs.F.Promise;
-import play.mvc.Action;
-import play.mvc.Http;
+import play.mvc.*;
 import play.mvc.Http.RequestHeader;
-import play.mvc.Result;
-import play.mvc.Results;
 import utils.*;
 import views.html.welcome.restart;
 import views.html.welcome.secret;
@@ -58,10 +57,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.SecureRandom;
-import java.util.Date;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 
 import static play.data.Form.form;
 import static play.mvc.Results.badRequest;
+import static play.mvc.Results.redirect;
 
 
 public class Global extends GlobalSettings {
@@ -75,10 +77,12 @@ public class Global extends GlobalSettings {
 
     private ConfigFile configFile = new ConfigFile("config", "application.conf");
     private ConfigFile loggerConfigFile = new ConfigFile("logger", "application-logger.xml");
+    private ConfigFile oAuthProviderConfFile = new ConfigFile("conf", "social-login.conf");
 
     @Override
     public Configuration onLoadConfig(play.Configuration config, File path, ClassLoader classloader) {
         initLoggerConfig();
+        initAuthProviderConfig();
         return initConfig(classloader);
     }
 
@@ -132,23 +136,103 @@ public class Global extends GlobalSettings {
         }
     }
 
+    /**
+     * Creates play-authenticate/mine.conf by default if necessary
+     */
+    private void initAuthProviderConfig() {
+        try {
+            if (!oAuthProviderConfFile.isLocationSpecified() && !oAuthProviderConfFile.getPath().toFile().exists()) {
+                try {
+                    oAuthProviderConfFile.createByDefault();
+                } catch (Exception e) {
+                    play.Logger.error("Failed to initialize social-login.conf", e);
+                }
+            }
+        } catch (URISyntaxException e) {
+            play.Logger.error("Failed to check whether the social-login.conf file exists", e);
+        }
+    }
+
     @Override
     public void onStart(Application app) {
         isSecretInvalid = equalsDefaultSecret();
         insertInitialData();
 
+        Timestamp timestamp = new Timestamp("=== Yona server starting initialization ===");
         Config.onStart();
+        timestamp.logElapsedTime("--- Config reading: ok!");
         Property.onStart();
+        timestamp.logElapsedTime("--- Property reading: ok!");
         PullRequest.onStart();
+        timestamp.logElapsedTime("--- Pull request checking: ok!");
         NotificationMail.onStart();
+        timestamp.logElapsedTime("--- Notification mail scheduler: ok!");
         NotificationEvent.onStart();
+        timestamp.logElapsedTime("--- Notification event cleanup scheduler: ok!");
         Attachment.onStart();
+        timestamp.logElapsedTime("--- Temporary files cleanup scheduler: ok!");
         AccessControl.onStart();
+        timestamp.logElapsedTime("--- Basic access controller config reading: ok!");
 
         if (!isSecretInvalid) {
             YobiUpdate.onStart();
+            timestamp.logElapsedTime("--- Update checker run: ok! ");
             mailboxService.start();
+            timestamp.logElapsedTime("--- MailboxService checker run: ok!");
         }
+
+        PlayAuthenticate.setResolver(new PlayAuthenticate.Resolver() {
+
+            @Override
+            public Call login() {
+                // Your login page
+                return routes.Application.index();
+            }
+
+            @Override
+            public Call afterAuth() {
+                // The user will be redirected to this page after authentication
+                // if no original URL was saved
+                return routes.Application.index();
+            }
+
+            @Override
+            public Call afterLogout() {
+                return routes.Application.index();
+            }
+
+            @Override
+            public Call auth(final String provider) {
+                return routes.Application.oAuth(provider);
+            }
+
+            @Override
+            public Call onException(final AuthException e) {
+                if (e instanceof AccessDeniedException) {
+                    return routes.Application
+                            .oAuthDenied(((AccessDeniedException) e)
+                                    .getProviderKey());
+                }
+
+                // more custom problem handling here...
+
+                return super.onException(e);
+            }
+
+            @Override
+            public Call askLink() {
+                // We don't support moderated account linking in this sample.
+                // See the play-authenticate-usage project for an example
+                return null;
+            }
+
+            @Override
+            public Call askMerge() {
+                // We don't support moderated account merging in this sample.
+                // See the play-authenticate-usage project for an example
+                return null;
+            }
+        });
     }
 
     private boolean equalsDefaultSecret() {
@@ -185,7 +269,7 @@ public class Global extends GlobalSettings {
                 } catch (Exception e) {
                     play.Logger.warn("Failed to update the preferred language", e);
                 }
-                ctx.response().setHeader("Date", DateUtils.formatDate(new Date()));
+                ctx.response().setHeader("Date", DateTimeFormatter.RFC_1123_DATE_TIME.format(ZonedDateTime.now(ZoneId.of("GMT"))));
                 ctx.response().setHeader("Cache-Control", "no-cache");
                 Promise<Result> promise = delegate.call(ctx);
                 AccessLogger.log(request, promise, start);
@@ -389,12 +473,12 @@ public class Global extends GlobalSettings {
          * @return the path to the directory to store configuration files
          */
         static Path getDirectoryPath() {
-            return Paths.get(Config.getYobiHome(""), CONFIG_DIRNAME);
+            return Paths.get(Config.getYonaDataDir(""), CONFIG_DIRNAME);
         }
 
         boolean isExternal() throws IOException, URISyntaxException {
             return !FileUtil.isSubpathOf(getPath(), getDirectoryPath()) &&
-                   !FileUtil.isSubpathOf(getPath(), Paths.get(Config.getYobiHome()));
+                   !FileUtil.isSubpathOf(getPath(), Paths.get(Config.getYonaDataDir()));
         }
     }
 }

@@ -15,7 +15,7 @@ import java.util.List;
 @Table(uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "project_id"}))
 public class RecentProject extends Model {
     private static final long serialVersionUID = 7306890271871188281L;
-    public static int MAX_RECENT_LIST_PER_USER = 10;
+    public static int MAX_RECENT_LIST_PER_USER = 20;
 
     public static Finder<Long, RecentProject> find = new Finder<>(Long.class, RecentProject.class);
 
@@ -34,17 +34,17 @@ public class RecentProject extends Model {
         this.projectName = project.name;
     }
 
-    @Transactional
     public static List<Project> getRecentProjects(@Nonnull User user){
         List<RecentProject> recentProjects = find.where()
-                .eq("userId", user.id).findList();
+                .eq("userId", user.id).orderBy("id desc").findList();
 
         List<Project> found = new ArrayList<>();
 
+        // remove deleted projects
         for(RecentProject rp: recentProjects){
-            Project byOwnerAndProjectName = Project.findByOwnerAndProjectName(rp.owner, rp.projectName);
-            if(byOwnerAndProjectName != null){
-                found.add(0, byOwnerAndProjectName);
+            Project project = Project.find.byId(rp.projectId);
+            if(project != null){
+                found.add(project);
             }
         }
 
@@ -76,7 +76,7 @@ public class RecentProject extends Model {
         }
     }
 
-    private static void deletePrevious(User user, Project project) {
+    public static void deletePrevious(User user, Project project) {
         RecentProject existed = find.where()
                 .eq("userId", user.id)
                 .eq("projectId", project.id).findUnique();
@@ -84,7 +84,6 @@ public class RecentProject extends Model {
         if(existed != null){
             existed.delete();
         }
-
     }
 
     private static void deleteOldestIfOverflow(User user) {
@@ -98,7 +97,16 @@ public class RecentProject extends Model {
                 }
             };
             RecentProject oldest = Collections.min(recentProjects, comparator);
+            oldest.refresh();
             oldest.delete();
+        }
+    }
+
+    public static void deleteAll(User user) {
+        List<RecentProject> recentProjects = find.where()
+                .eq("userId", user.id).findList();
+        for (RecentProject rp : recentProjects) {
+            rp.delete();
         }
     }
 }

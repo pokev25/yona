@@ -1,23 +1,9 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2013 NAVER Corp.
- * http://yobi.io
- *
- * @author JiHan Kim
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+ * https://yona.io
+ **/
 yobi.Files = (function(){
     var htVar = {};
     var htElements = {};
@@ -57,7 +43,7 @@ yobi.Files = (function(){
                        && (navigator.userAgent.indexOf("FireFox") === -1); // and not FireFox
 
         // maximum filesize (<= 2,147,483,454 bytes = 2Gb)
-        htVar.nMaxFileSize = 2147483454;
+        htVar.nMaxFileSize = htOptions.maxFileSize || 2147483454;
     }
 
     /**
@@ -122,13 +108,14 @@ yobi.Files = (function(){
         // check maximum filesize (<= 2,147,483,454 bytes) if available
         if(oFile.size && oFile.size > htVar.nMaxFileSize){
             return _onErrorSubmit(nSubmitId, {
-                "status"    : 0,
+                "status"    : humanize.filesize(oFile.size),
                 "statusText": Messages("error.toolargefile", humanize.filesize(htVar.nMaxFileSize))
             }, sNamespace);
         }
 
         var oData = new FormData();
-        oData.append("filePath", oFile, oFile.name);
+        var filename = oFile.name === 'image.png' ? nSubmitId + ".png" : oFile.name;
+        oData.append("filePath", oFile, filename);
 
         $.ajax({
             "type" : "post",
@@ -568,7 +555,9 @@ yobi.Files = (function(){
      * @return {Number}
      */
     function _getSubmitId(){
-        return parseInt(Math.random() * new Date().getTime());
+      var now = new Date();
+      return  now.getMilliseconds() + '-' + now.getFullYear() + '' + (now.getMonth() + 1)
+          + '-' + now.getDate() + '-' + now.getHours() + '' + now.getMinutes() + '-' + now.getSeconds();
     }
 
     /**

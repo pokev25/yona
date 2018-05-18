@@ -5,37 +5,82 @@
 # This fake route is required to submit a seed to generate Site Secret.
 POST           /                                                                      controllers.Application.fake()
 
-GET            /navitest                                                              controllers.Application.navi()
-
 # Home page
 GET            /                                                                      controllers.Application.index()
+GET            /notifications                                                         controllers.Application.notifications()
+
+# Play!Authenticate
+GET     /logout                            controllers.Application.oAuthLogout
+GET     /authenticate/:provider            controllers.Application.oAuth(provider: String)
+GET     /authenticate/:provider/denied     controllers.Application.oAuthDenied(provider: String)
+GET     /restricted                        controllers.Restricted.index
+
+# Migration support page
+GET            /migration                                                             controllers.MigrationApp.migration()
+GET            /migration/projects                                                    controllers.MigrationApp.projects()
+GET            /migration/:owner/projects/:projectName                                controllers.MigrationApp.project(owner, projectName)
+GET            /migration/:owner/projects/:projectName/labels                         controllers.MigrationApp.exportLabels(owner, projectName)
+GET            /migration/:owner/projects/:projectName/issuelabel                     controllers.MigrationApp.exportIssueLabelPairs(owner, projectName)
+GET            /migration/:owner/projects/:projectName/milestones                     controllers.MigrationApp.exportMilestones(owner, projectName)
+GET            /migration/:owner/projects/:projectName/issues                         controllers.MigrationApp.exportIssues(owner, projectName)
+GET            /migration/:owner/projects/:projectName/posts                          controllers.MigrationApp.exportPosts(owner, projectName)
+
 # Map static resources from the /public folder to the /assets URL path
 GET            /messages.js                                                           controllers.Application.jsMessages()
 GET            /favicon.ico                                                           controllers.Assets.at(path="/public", file="images/favicon.ico")
 GET            /assets/*file                                                          controllers.Assets.at(path="/public", file)
 
 # Bootstrapping for test
-GET            /init                                                                  controllers.Application.init()
-GET            /UIKit                                                                 controllers.Application.UIKit()
+GET            /_init                                                                  controllers.Application.init()
+GET            /_UIKit                                                                  controllers.Application.UIKit()
 
 # Search
-GET            /search                                                                controllers.SearchApp.searchInAll()
+GET            /search                                                                 controllers.SearchApp.searchInAll()
 
-GET            /-_-api                                                                controllers.Application.index()
-GET            /-_-api/v1/                                                            controllers.Application.index()
-POST           /-_-api/v1/owners/:owner/projects/:projectName/posts                   controllers.BoardApi.newPostByJson(owner:String, projectName:String)
-POST           /-_-api/v1/owners/:owner/projects/:projectName/postlabel/:number       controllers.BoardApi.updatePostLabel(owner:String, projectName:String, number:Long)
+GET            /-_-api                                                                 controllers.Application.index()
+GET            /-_-api/v1/                                                             controllers.Application.index()
+GET            /-_-api/v1/owners/:owner/projects/:projectName/exports                  controllers.api.ProjectApi.exports(owner:String, projectName:String)
+GET            /-_-api/v1/owners/:owner/projects/:projectName/posts/$number<[0-9]+>/watchers   controllers.api.WatcherApi.getWatchers(owner:String, projectName:String, number:Long)
+POST           /-_-api/v1/owners/:owner/projects/:projectName/posts                    controllers.api.BoardApi.newPostings(owner:String, projectName:String)
+POST           /-_-api/v1/owners/:owner/projects/:projectName/posts/:number/comments  controllers.api.BoardApi.newPostingComment(owner:String, projectName:String, number:Long)
+POST           /-_-api/v1/owners/:owner/projects/:projectName/postlabel/:number        controllers.api.BoardApi.updatePostLabel(owner:String, projectName:String, number:Long)
+POST           /-_-api/v1/owners/:owner/projects/:projectName/issues                   controllers.api.IssueApi.newIssues(owner:String, projectName:String)
+POST           /-_-api/v1/owners/:owner/projects/:projectName/issues/:number/comments  controllers.api.IssueApi.newIssueComment(owner:String, projectName:String, number:Long)
+POST           /-_-api/v1/owners/:owner/projects/:projectName/issuelabel/:number       controllers.api.IssueApi.updateIssueLabel(owner:String, projectName:String, number:Long)
+POST           /-_-api/v1/owners/:owner/projects/:projectName/milestones               controllers.api.MilestoneApi.newMilestone(owner:String, projectName:String)
+GET            /-_-api/v1/hello                                                        controllers.api.GlobalApi.hello()
+GET            /-_-api/v1/favoriteProjects                                             controllers.api.UserApi.getFoveriteProjects
+POST           /-_-api/v1/favoriteProjects/:projectId                                  controllers.api.UserApi.toggleFoveriteProject(projectId:String)
+GET            /-_-api/v1/favoriteOrganizations                                        controllers.api.UserApi.getFoveriteOrganizations
+POST           /-_-api/v1/favoriteOrganizations/:organizationId                        controllers.api.UserApi.toggleFoveriteOrganization(organizationId:String)
+GET            /-_-api/v1/owners/:owner/projects/:projectName/issues/:number/assignableUsers                                                   controllers.api.IssueApi.findAssignableUsers(owner:String, projectName:String, number:Long, query: String ?= "")
+GET            /-_-api/v1/owners/:owner/projects/:projectName/assignableUsers                                                   controllers.api.IssueApi.findAssignableUsersOfProject(owner:String, projectName:String, query: String ?= "")
+POST           /-_-api/v1/owners/:owner/projects/:projectName/issues/:number/assignees                                                   controllers.api.IssueApi.updateAssginees(owner:String, projectName:String, number:Long)
+GET            /-_-api/v1/owners/:owner/projects/:projectName/issues/:number/findSharer                                              controllers.api.IssueApi.findSharerByloginIds(owner:String, projectName:String, number:Long, query: String ?= "")
+GET            /-_-api/v1/owners/:owner/projects/:projectName/issues/:number/sharableUsers                                                   controllers.api.IssueApi.findSharableUsers(owner:String, projectName:String, number:Long, query: String ?= "")
+POST           /-_-api/v1/owners/:owner/projects/:projectName/issues/:number/share                                                   controllers.api.IssueApi.updateSharer(owner:String, projectName:String, number:Long)
+GET            /-_-api/v1/users                                                        controllers.UserApp.users(query: String ?= "")
+POST           /-_-api/v1/users                                                        controllers.api.UserApi.newUser()
+POST           /-_-api/v1/owners/:owner/projects                                       controllers.api.ProjectApi.newProject(owner:String)
+POST           /-_-api/v1/owners/:owner/projects/:projectName/labels                   controllers.api.ProjectApi.newLabel(owner:String, projectName:String)
+
+POST           /-_-api/v1/user/defultLoginPage                                         controllers.UserApp.setDefaultLoginPage()
+POST           /-_-api/v1/translation                                                  controllers.api.IssueApi.translate()
+
+
 
 # Import
-GET            /import                                                                controllers.ImportApp.importForm()
-POST           /import                                                                controllers.ImportApp.newProject()
+GET            /_import                                                                 controllers.ImportApp.importForm()
+POST           /_import                                                                 controllers.ImportApp.newProject()
 
 # Organization
-GET            /organizations/new                                                     controllers.OrganizationApp.newForm()
-POST           /organizations/new                                                     controllers.OrganizationApp.newOrganization()
+GET            /organizations/new                                                      controllers.OrganizationApp.newForm()
+POST           /organizations/new                                                      controllers.OrganizationApp.newOrganization()
 GET            /organizations/:organizationName                                       controllers.OrganizationApp.organization(organizationName: String)
 GET            /organizations/:organizationName/issues                                controllers.IssueApp.organizationIssues(organizationName: String, state:String ?= "", format:String ?= "html", pageNum: Int ?= 1)
 GET            /organizations/:organizationName/boards                                controllers.BoardApp.organizationBoards(organizationName: String, pageNum: Int ?= 1)
+GET            /organizations/:organizationName/pullrequests                          controllers.OrganizationApp.organizationPullRequests(organizationName: String, category: String ?= "open")
+GET            /organizations/:organizationName/closedPullrequests                    controllers.OrganizationApp.organizationClosedPullRequests(organizationName: String)
 GET            /organizations/:organizationName/settingform                           controllers.OrganizationApp.settingForm(organizationName: String)
 GET            /organizations/:organizationName/deleteForm                            controllers.OrganizationApp.deleteForm(organizationName: String)
 DELETE         /organizations/:organizationName                                       controllers.OrganizationApp.deleteOrganization(organizationName: String)
@@ -55,9 +100,13 @@ POST           /organizations/:organizationName/cancel/enroll                   
 POST           /noti/toggle/:projectId/:notiType                                      controllers.WatchProjectApp.toggle(projectId: Long, notiType)
 
 # User
-GET            /users                                                                 controllers.UserApp.users(query: String ?= "")
+GET            /user/issues                                                           controllers.IssueApp.userIssuesPage()
 GET            /user/issues                                                           controllers.IssueApp.userIssues(state:String ?= "", format:String ?= "html", pageNum: Int ?= 1)
+GET            /user/issues/new                                                       controllers.IssueApp.newDirectIssueForm()
+GET            /user/issues/new/mine                                                  controllers.IssueApp.newDirectMyIssueForm()
+GET            /user/files                                                            controllers.UserApp.userFiles()
 GET            /users/loginform                                                       controllers.UserApp.loginForm()
+GET            /users/login                                                           controllers.Application.index()
 POST           /users/login                                                           controllers.UserApp.login()
 GET            /users/logout                                                          controllers.UserApp.logout()
 GET            /users/signupform                                                      controllers.UserApp.signupForm()
@@ -67,8 +116,10 @@ GET            /user/editform/:tabId                                            
 POST            /user/editform/:tabId                                                  controllers.UserApp.editUserInfoByTabForm(tabId: String)
 POST           /user/edit                                                             controllers.UserApp.editUserInfo()
 POST           /user/resetPassword                                                    controllers.UserApp.resetUserPassword()
+POST           /user/resetVisitedList                                                 controllers.UserApp.resetUserVisitedList()
 GET            /user/isUsed                                                           controllers.UserApp.isUsed(name:String)
 GET            /user/isEmailExist                                                     controllers.UserApp.isEmailExist(email:String)
+GET            /user/usermenuTabContentList                                           controllers.UserApp.usermenuTabContentList()
 GET            /info/leave/:user/:project                                             controllers.UserApp.leave(user, project)
 POST           /user/email                                                            controllers.UserApp.addEmail()
 DELETE         /user/email/delete/:emailId                                            controllers.UserApp.deleteEmail(emailId:Long)
@@ -89,6 +140,7 @@ DELETE         /sites/user/delete:userId                                        
 GET            /sites/projectList                                                     controllers.SiteApp.projectList(filter:String ?= "", pageNum: Int ?=0)
 DELETE         /sites/project/delete/:projectId                                       controllers.SiteApp.deleteProject(projectId:Long)
 POST           /sites/toggleAccountLock                                               controllers.SiteApp.toggleAccountLock(loginId: String, state: String ?= null, query: String ?= null)
+POST           /sites/toggleGuestMode                                               controllers.SiteApp.toggleGuestMode(loginId: String, state: String ?= null, query: String ?= null)
 GET            /sites/update                                                          controllers.SiteApp.update()
 POST           /sites/unwatchUpdate                                                   controllers.SiteApp.unwatchUpdate()
 GET            /sites/diagnostic                                                      controllers.SiteApp.diagnose()
@@ -96,8 +148,11 @@ GET            /lostPassword                                                    
 POST           /lostPassword                                                          controllers.PasswordResetApp.requestResetPasswordEmail()
 GET            /resetPassword                                                         controllers.PasswordResetApp.resetPasswordForm(s:String)
 POST           /resetPassword                                                         controllers.PasswordResetApp.resetPassword()
+GET            /verify/:loginId/:verificationCode                                     controllers.UserApp.verifyUser(loginId:String, verificationCode:String)
 GET            /sites/postList                                                        controllers.SiteApp.postList(pageNum: Int ?= 1)
 GET            /sites/issueList                                                       controllers.SiteApp.issueList(pageNum: Int ?= 1)
+GET            /sites/noAvatarUsers                                                   controllers.SiteApp.noAvatarUsers()
+POST           /sites/setAttachmentToUserAvatar                                       controllers.SiteApp.setAttachmentToUserAvatar()
 
 # Attachments
 GET            /files                                                                 controllers.AttachmentApp.getFileList()
@@ -130,19 +185,20 @@ POST           /:user/:project/labels                                           
 POST           /:user/:project/labels/:id                                             controllers.ProjectApp.detachLabel(user, project, id: Long)
 
 # Notifications
-GET            /notifications                                                         controllers.NotificationApp.notifications(from: Integer, limit: Integer)
+GET            /notification                                                         controllers.NotificationApp.notifications(from: Integer, limit: Integer)
 
 # Projects
 GET            /projectform                                                           controllers.ProjectApp.newProjectForm()
 POST           /projects                                                              controllers.ProjectApp.newProject()
 GET            /projects                                                              controllers.ProjectApp.projects(filter:String ?= "", pageNum: Int ?= 1)
+GET            /orgs                                                                  controllers.OrganizationApp.orgList(filter:String ?= "", pageNum: Int ?= 1)
 GET            /:user/:project                                                        controllers.ProjectApp.project(user, project)
 PUT            /:user/:project                                                        controllers.ProjectApp.projectOverviewUpdate(user, project)
 GET            /:user/:project/settingform                                            controllers.ProjectApp.settingForm(user, project)
 POST           /:user/:project/setting                                                controllers.ProjectApp.settingProject(user, project)
 GET            /:user/:project/deleteform                                             controllers.ProjectApp.deleteForm(user, project)
 DELETE         /:user/:project/delete                                                 controllers.ProjectApp.deleteProject(user, project)
-GET            /:user/:project/mentionList                                            controllers.ProjectApp.mentionList(user, project, number:Long ?= -1, resourceType:String ?= "")
+GET            /:user/:project/mentionList                                            controllers.ProjectApp.mentionList(user, project, number:Long ?= -1, resourceType:String ?= "", query: String ?= "", mentionType: String ?= "")
 GET            /:user/:project/mentionListAtCommitDiff                                controllers.ProjectApp.mentionListAtCommitDiff(user, project, commitId:String ?= "", pullRequestId:Long ?= -1)
 GET            /:user/:project/mentionListAtPullRequest                               controllers.ProjectApp.mentionListAtPullRequest(user, project, commitId:String ?= "", pullRequestId:Long)
 GET            /:user/:project/members                                                controllers.ProjectApp.members(user, project)
@@ -152,6 +208,7 @@ DELETE         /:user/:project/member/:id/delete                                
 GET            /:user/:project/webhooks                                               controllers.ProjectApp.webhooks(user, project)
 POST           /:user/:project/webhooks                                               controllers.ProjectApp.newWebhook(user, project)
 DELETE         /:user/:project/webhooks/:id                                           controllers.ProjectApp.deleteWebhook(user, project, id: Long)
+GET            /:user/:project/watchers                                               controllers.ProjectApp.watchers(user, project)
 DELETE         /:user/:project/pushedBranch/:id/delete                                controllers.ProjectApp.deletePushedBranch(user, project, id:Long)
 GET            /:user/:project/transfer                                               controllers.ProjectApp.transferForm(user, project)
 PUT            /:user/:project/transfer                                               controllers.ProjectApp.transferProject(user, project)
@@ -159,6 +216,9 @@ GET            /project/transfer/:id/:key                                       
 GET            /:user/:project/search                                                 controllers.SearchApp.searchInAProject(user, project)
 GET            /:user/:project/changeVCS                                              controllers.ProjectApp.changeVCSForm(user, project)
 POST           /:user/:project/changeVCS                                              controllers.ProjectApp.changeVCS(user, project)
+
+# Project menu forwarding
+GET            /:user/:project/go                                                     controllers.ProjectApp.goConventionMenu(user, project, state:String ?= "", format:String ?= "html", pageNum: Int ?= 1)
 
 # Project Review Menu
 GET            /:user/:project/reviews                                                controllers.ReviewThreadApp.reviewThreads(user, project)
@@ -250,6 +310,7 @@ GET            /:user/:project/code/:branch/!/*path                             
 #for normal
 GET            /:user/:project/code                                                   controllers.CodeApp.codeBrowser(user, project)
 GET            /:user/:project/code/:branch                                           controllers.CodeApp.codeBrowserWithBranch(user, project, branch:String, path="")
+GET            /:user/:project/code/:branch/download                                  controllers.CodeApp.download(user, project, branch:String, path="")
 GET            /:user/:project/code/:branch/*path                                     controllers.CodeApp.codeBrowserWithBranch(user, project, branch:String, path:String)
 GET            /:user/:project/rawcode/:rev/*path                                     controllers.CodeApp.showRawFile(user, project, rev:String, path:String)
 GET            /:user/:project/files/:rev/*path                                       controllers.CodeApp.openFile(user, project, rev:String, path:String)
@@ -269,7 +330,7 @@ DELETE         /:user/:project/code/:branch/                                    
 POST           /:user/:project/code/:branch/setAsDefault                              controllers.BranchApp.setAsDefault(user, project, branch)
 
 # Help
-GET            /help                                                                  controllers.HelpApp.help()
+GET            /_help                                                                  controllers.HelpApp.help()
 
 # Watch
 POST           /watch                                                                 controllers.WatchApp.watch(resource: models.resource.ResourceParam)

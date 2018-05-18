@@ -1,10 +1,10 @@
-<a name="korean"></a>
-[[English]](#english)
+<a name="korean"></a>[[English]](#english)
 
 [![Build Status](https://travis-ci.org/yona-projects/yona.svg?branch=master)](https://travis-ci.org/yona-projects/yona)
-Yona
-====
+![Downloads Status](https://img.shields.io/github/downloads/yona-projects/yona/total.svg)
 
+
+<img src='public/images/yona_logo.png' width='300px'>
 21세기 협업 개발 플랫폼
 
 DEMO: [http://repo.yona.io](http://repo.yona.io)
@@ -13,571 +13,221 @@ Official Site: [http://yona.io](http://yona.io)
 
 Yona?
 --
-Yona는 팀이 개발을 진행하는데 그 속도를 높이고 효율을 증가시키기 위해 만들어졌습니다.
+- Git 저장소 기능이 내장된 설치형 이슈트래커
+- Naver를 비롯하여 게임회사, 통신회사 고객센터, 투자사, 학교, 기업등에서 수년 간 실제로 사용되어 왔고 개선되어 온(Real world battled) 애플리케이션입니다
 
-- 이슈 트래커: 기간이나 마일스톤과 함께 업무를 관리할 수 있는 이슈 트래커
-  - 특히 `내 이슈` 기능은 업무처리를 통합된 화면에서 보고, 해야 할 일 / 언급된 일 등에 집중해서 쉽고 편하게 관리할 수 있습니다.
-- 게시판: 각종 문서나 파일을 쉽게 공유할 수 있는 게시판
-- 코드 저장소: 코드 개발에 필요한 Git / SVN 저장소 기능
-- 코드 주고받기(Pull request): 협업 개발을 위한 코드 주고받기(Pull request)
-- 코드 리뷰: 블럭 단위로 코멘트를 남길 수 있으며 리뷰 진행 여부를 확인 가능한 강력한 코드 리뷰 기능
-- 그룹(Organization): 일정 멤버들이 여러개의 프로젝트를 그룹으로 관리 수 있게 도와주는 강력한 그룹(Organization) 기능
-- 메일 연동: 각종 이벤트들을 설정에 따라 메일로 받을 수 있으며 또한 메일로 이슈나 댓글을 등록할 수 있습니다.
-
-등을 비롯하여 일상적인 업무에서 개발 전반에 이르는 다양한 기능을 포함하고 있습니다.
-
-왜 Yona를 써야 하나? (Why Yona?)
+주요기능
 ---
-[왜 Yona를 써야 하나? (Why Yona?)](https://repo.yona.io/yona-projects/yona/post/3)를 참고해 주세요
+- 서비스 종료나 데이터 종속 걱정없는 설치형
+- 프로젝트 기반의 유연한 이슈트래커와 게시판
+   - 편리한 프로젝트간 이슈 이동
+   - 서브 태스크 이슈
+   - 본문 변경이력 보기
+   - 이슈 템플릿 기능
+- 자체 내장된 코드 저장소
+   - Git/SVN 선택 가능
+   - 온라인 수정 및 커밋 지원
+   - 프로젝트 멤버만 코드에 접근 가능 기능 등
+- 블럭기반 코드리뷰 
+   - 코드 블럭 및 리뷰 스레드 지원
+   - 리뷰 점수 지원
+- 그룹 기능
+   - 그룹 이슈 및 게시글 통합관리
+   - 그룹 프로젝트, 그룹 멤버
+- 한글 기반
+   - 프로젝트 이름 및 그룹 이름에 한글을 사용가능
+- LDAP 지원
+   - LDAP 장애시에도 사용가능한 기능 제공
+- 다른 제품이나 서비스로의 마이그레이션 기능 제공
+   - Github/Github Enterprise, 또 다른 Yona 인스턴스, Redmine 등
+- 로그인 관련 보안을 높일 수 있는 소셜로그인 지원
+
+등을 비롯하여 일상적인 업무에서 SW 개발 전반에 필요한 다양한 기능을 포함하고 있습니다.
+
+추가 읽을거리
+---
+- [왜 Yona를 써야 하나요? (Why Yona?)](https://repo.yona.io/yona-projects/yona/post/3)
+- [기본 워크플로우](https://repo.yona.io/yona-projects/yona-help/post/2)
+
 
 라이선스
 --
 Yona는 Apache 2.0 라이선스로 제공됩니다.
 
+**이어지는 설치 및 실행, 백업 등등에 대한 자세한 설명은 [Wiki](https://github.com/yona-projects/yona/wiki)에 따로 세분화되어 정리되어 있습니다.**
 
-Yona 설치 방법
+Yona 설치 및 실행
 ===
 
-Yobi에서 Yona로 업그레이드 하려는 경우
+Yona 배포판
 ---
-1. 하단의 설치방법을 참고해서 Yona를 설치 합니다.
-2. [Yobi 에서 Yona로 Migration 하는 방법](https://repo.yona.io/yona-projects/yona/post/1)을 참고해서 마이그레이션을 진행합니다.
+현재 Yona는 버전별로 두 개의 배포판을 [릴리즈 메뉴](https://github.com/yona-projects/yona/releases)를 통해 제공하고 있습니다.
+
+- MariaDB 버전
+  - 기본 권장 버전
+  - `yona-v1.8.0-bin.zip` 같은 형식으로 파일로 배포
+  - DB 설치에 약간의 시간이 필요하지만 안정적으로 운영이 가능
+- H2 DB 내장형
+  - DB 설정없이 내려받아서 바로 실행해서 쓸 수 있는 버전
+  - `yona-h2-v1.8.0-bin.zip` 같은 형식으로 파일로 배포
+  - USB 등에 담아서 이동해가면서 사용하거나 작업후 통째로 zip으로 묶어서 들고 다니는 것이 가능함
+  - 대규모 사이트에서 사용하기에는 적합하지 않음. 참고: [Yona가 MariaDB를 기본 DB로 사용하게 된 이유](https://repo.yona.io/yona-projects/yona/post/4)
 
 Yona 설치
 ---
+Yona는 크게 다음과 같은 2단계로 설치합니다.
 
-Yona는 기본적으로 다음 2단계로 설치됩니다.
+- [MariaDB 설치](docs/ko/install-mariadb.md)
+- [Yona 설치](docs/ko/install-yona-server.md)
 
-- MariaDB설치
-- Yona 설치
+#### Docker를 이용한 설치
+[Docker](https://www.docker.com/)를 이용해 설치하실분은 [pokev25](https://github.com/pokev25) 님의 https://github.com/pokev25/docker-yona 를 이용해주세요. 
 
-Yona는 앞으로 기본DB를 MariaDB를 사용할 예정입니다. 다만 Yona 1.0 기준으로 yona-h2.zip 을 따로 제공합니다.
-[yona-1.0-h2.zip](https://github.com/yona-projects/yona/releases/tag/v1.0.0) MariaDB로 변경이 어렵거나 간편하게 설치해서 사용하실때는 이쪽을 이용해 주세요.
+#### Amazon AWS 에 설치 
+https://okdevtv.com/mib/yona 에서 가이드를 볼 수 있습니다. by [Kenu](https://www.facebook.com/kenu.heo)님
 
-관련해서는 다음 링크를 참고해 주세요
-- [Yona가 MariaDB를 기본 DB로 사용하게 된 이유](https://repo.yona.io/yona-projects/yona/post/4)
-
-그리고 Docker 를 이용해 설치하실분은 
-  - [pokev25](https://github.com/pokev25) 님의 https://github.com/pokev25/docker-yona 를 이용해주세요
-
-#### MariaDB 설치
-
-아래 설명은 진행 과정만 참고만 하시고 실제로는 MariaDB 10.1.10 이상을 설치해 주세요
-
-1. Linux 
-   - 배포본의 저장소 및 설치 스크립트는 다음 선택 페이지의 설명을 참고하여 설치 합니다.
-   - [Setting up MariaDB Repositories](https://downloads.mariadb.org/mariadb/repositories/)
-  
-2. Mac
-   - brew install 을 이용해서 설치를 권장합니다.
-   - https://mariadb.com/blog/installing-mariadb-10010-mac-os-x-homebrew
-
-3. Windows
-   - https://downloads.mariadb.org/mariadb/10.1.11/#os_group=windows
-
-##### DB 설치후 유저 및 Database 생성 
-
-기본 진행 내용은 MariaDB에 root 유저로 접속한 다음 yona 유저를 만들고 DB를 만들고 해당 DB의 모든 권한을 yona 유저에게 주는 작업입니다.
-
-MariaDB root 유저로 접속
-```
-mysql -uroot 
-```
-
-yona 유저 생성. password는 IDENTIFIED BY 다음에 지정한 문자가 됩니다. 아래 예)에서는 yonadan
-```
-create user 'yona'@'localhost' IDENTIFIED BY 'yonadan';
-```
-
-DB 생성 UTF8 확장문자열을 저장할 수 있는 포맷으로 지정해서 생성합니다.
-
-```
-set global innodb_file_format = BARRACUDA;
-set global innodb_large_prefix = ON;
-
-create database yona
-  DEFAULT CHARACTER SET utf8mb4
-  DEFAULT COLLATE utf8mb4_bin
-;
-```
-
-yona 유저에게 yona 데이터베이스 권한 부여
-
-```
-GRANT ALL ON yona.* to 'yona'@'localhost';
-```
-
-`exit`명령어로 쉘로 빠져 나온 다음 yona 유저로 정상 접속되고 yona DB가 사용 가능한지 확인해 봅니다.
-참고로 -p 다음에 쓴 글자가 위에서 만든 패스워드입니다.
-
-```
-mysql -u yona -p"yonadan"
-use yona
-```
-
-/etc/my.cnf 파일을 만들어서 아래 내용을 추가해 주세요. 
-(mac os 유저의 경우에는 db 실행유저의 ~/.my.cnf에 아래 내용을 추가해 주세요)
-샘플참고: https://github.com/yona-projects/yona/blob/next/support-script/mariadb/my.cnf
-
-```
-[client]
-default-character-set=utf8mb4
-
-[mysql]
-default-character-set=utf8mb4
-
-[mysqld]
-collation-server=utf8mb4_unicode_ci
-init-connect='SET NAMES utf8mb4'
-character-set-server=utf8mb4
-lower_case_table_names=1
-innodb_file_format=barracuda
-innodb_large_prefix=on
-```
-
-꼭 /etc 아래가 아니더라도 [my.cnf 위치 탐색순서](https://mariadb.com/kb/en/mariadb/configuring-mariadb-with-mycnf/) 를 보고 적당한 곳에 my.cnf 파일을 만들어서 넣어도 무방하다고 알려져 있습니다. (Mac OS 유저는 우선은 위 설명대로 해주세요. 추가 확인이 필요합니다)
-
-이제 Yona 를 설치합니다. 
-
-#### Yona 설치
-
-Yona 최신 버전을 https://github.com/yona-projects/yona/releases 에서 다운받아 압축을 풉니다. 
-wget으로 받아서 unzip으로 압축을 푼다면 미리 다운로드 링크 주소를 확인한 다음 내려받습니다.
-
-예)
-
-    wget https://github.com/yona-projects/yona/releases/download/v1.0.0/yona.zip
-    unzip yona.zip
-
-### application.conf 파일등 생성하기
-
-압축이 풀린 곳으로 이동해서 bin/yona 을 실행합니다. (Java 8 이상이 필요합니다)
-**주의**: 아래와 같이 yona 설치 폴더에서 실행하여야 합니다. 또한 윈도우 사용자는 bin/yona 대신 bin/yona.bat을 실행해야 합니다.
-
-```
-cd yona
-bin/yona
-```
-
-실행하면 패스워드가 틀렸다는 에러와 함께 실행이 종료 될겁니다. 이제 압축을 풀었을때는 안 보였던 conf 디렉터리가 보일 겁니다. 
-
-#### DB 설정 수정
-
-앞서 설치한 MariaDB에 맞게 DB 연결 설정을 수정해야 합니다.
-
-conf 폴더 아래의 application.conf 파일에서 아래 부분에서 password를 위에서 설정한 password로 수정해 주세요
-```
-...
-db.default.driver=org.mariadb.jdbc.Driver
-db.default.url="jdbc:mariadb://127.0.0.1:3306/yona?useServerPrepStmts=true"
-db.default.user=yona
-db.default.password="yonadan"
-...
-```
-
-`yonadan`은 예시일뿐 그대로 사용하지 않는 걸 권장합니다. 
-
-#### 실행
-
-압축이 풀린 디렉터리로 이동해서 다시 yona를 실행합니다.
-
-    cd yona
-    bin/yona
+Yona 실행 및 업그레이드/백업 및 복구/문제 해결
+---
+- [실행 및 재시작 방법](docs/ko/yona-run-and-restart.md)
+- 안정적인 운영을 위한 [실행 옵션들](docs/ko/yona-run-options.md)
+- [업그레이드](docs/ko/yona-upgrade.md)
+- [백업 및 복구](docs/ko/yona-backup-restore.md)
+- [알림메일 발송 기능 설정](docs/ko/yona-mail-settings.md)
+- [발생 가능한 문제상황들과 해결방법](docs/ko/trouble-shootings.md)
 
 
-이제 웹 브라우저로 http://127.0.0.1:9000 에 접속하면 환영 페이지를 보실 수 있습니다. 
-어드민 설정을 마치고 다시 쉘을 시작합니다.
-
-**유의! windows os 사용자의 경우**
-[#windows의-경우](https://github.com/yona-projects/yona#windows의-경우)를 꼭 참고해주세요
-
-
-만약 콘솔에 DB 관련 에러 특히 
-```
-[error] play - Specified key was too long; max key length is 767 bytes [ERROR:1071, SQLSTATE:42000] 
-```
-가 발생할 경우 문서 하단의 `MariaDB 767 byte 에러` 항목을 참고해 주세요
-
-#### 업그레이드
-
-설치할 때와 똑같이, 최신 버전을 내려받아 Yona가 설치된 디렉터리에 압축파일을
-풉니다.
-
-**주의사항! `repo`와 `uploads` 디렉터리를 삭제하거나
-덮어쓰지 않도록 주의하세요!**
-
-
-### 소스코드를 직접 내려 받아서 빌드 실행하기
-
+소스코드를 직접 내려 받아서 빌드 실행하기
+---
 자신의 입맛에 맛게 코드를 직접 수정해서 작업하거나 코드를 기여하고 싶을 경우에는 코드 저장소로부터 코드를 직접 내려받아서 빌드/실행하는 것도 가능합니다.
-
 [소스코드를 직접 내려 받아서 실행하기](https://repo.yona.io/yona-projects/yona/post/5)를 참고해 주세요
 
+서버 관련 설정들
+---
+- [application.conf 설명](docs/ko/application-conf-desc.md)
+- [소셜 로그인 설정](docs/ko/yona-social-login-settings.md)
 
-### 옵션
-
-[간단한 재시작 쉘 예제](https://github.com/yona-projects/yona/blob/next/restart.sh)
-
-#### Linux, OSX의 경우
-
-`YONA_HOME` 속성을 통해 Yona가 데이터, 데이터베이스, 설정파일을 불러오고 저장할
-홈 디렉터리를 지정할 수 있습니다. 예를 들어, /home/user/.yona를 홈 디렉터리로
-사용하려면 Yona를 시작할 때 다음과 같이 지정합니다.
-
-    YONA_HOME=/home/user/.yona bin/yona
-
-`_JAVA_OPTIONS` 환경변수를 이용해 자바 환경 변수를 지정할 수도 있습니다. 시스템
-메모리가 4기가 이상이라면, 다음과 같은 옵션으로 실행하는걸 권장합니다.
-
-    _JAVA_OPTIONS="-Xmx2048m -Xms2048m" bin/yona
-
-기본적으로 9000번 포트를 사용하지만, 다른 포트를 사용하고 싶다면 http.port 자바
-환경변수를 수정합니다.
-
-    _JAVA_OPTIONS="-Dhttp.port=80" bin/yona
-
-#### Windows의 경우
-
-Yona를 시작할 때, YONA_HOME 폴더의 위치를 지정해서 아래 명령순서로 실행해주세요!
-아래 내용이 들어가 있는 run.bat을 따로 만드셔도 좋습니다!
-
+Google Analytics
+---
+- 기본적으로는 Google Analytics 가 활성화 되어 함께 배포됩니다. 
+- 설치형으로 제공되는 Yona의 특성상 제품이 지속적으로 개발/유지되기 위해서는 사용자들이 현재 어느정도 내려받아서 사용하고 있는지에 대한 정보가 필요합니다.
+- 만약 이부분에 대해 도움을 주기 곤란한 경우 application.conf 에서 아래 항목을 false로 수정합니다.
 ```
-SET YONA_HOME=c:\yona\yona-1.0.4
-SET JAVA_OPTS=-Dyona.home=%YONA_HOME% -Dconfig.file=%YONA_HOME%\conf\application.conf -Dlogger.file=%YONA_HOME%\conf\application-logger.xml
-bin\yona.bat
+application.send.yona.usage = true
 ```
 
-`_JAVA_OPTIONS` 환경변수를 이용해 자바 환경 변수를 지정할 수도 있습니다. 시스템
-메모리가 4기가 이상이라면, 다음과 같은 옵션으로 실행하는 걸 권장합니다.
-
-    SET JAVA_OPTS=-Xmx2048m -Xms2048m
-    bin\yona.bat
-
-기본적으로 9000번 포트를 사용하지만, 다른 포트를 사용하고 싶다면 http.port 자바
-환경변수를 수정합니다.
-
-    _JAVA_OPTIONS=-Dhttp.port=80
-    bin\yona.bat
-
-업그레이드를 하는 경우 다음과 같이 데이터베이스 스키마 마이그레이션이
-필요하다는 경고 메시지와 함께 실행되지 않는 상황을 겪을 수 있습니다.
-
-    [warn] play - Your production database [default] needs evolutions!
-
-그런 경우에는 자동으로 마이그레이션이 되도록 다음과 같이
-applyEvolutions.default 자바 프로퍼티를 true로 설정합니다.
-
-    SET JAVA_OPTS=-DapplyEvolutions.default=true
-    bin\yona.bat
-
-#### 옵션에 대한 더 자세한 설명
-
-[http://www.playframework.com/documentation/2.3.6/Production](http://www.playframework.com/documentation/2.3.6/Production) 부분을 확인해 주세요.
-
-### 백업하기
-
-DB 백업은 https://mariadb.com/kb/en/mariadb/backup-and-restore-overview/ 를 참고해 주세요
-
-코드 저장소의 파일과 업로드 파일은 아래 디렉터리에 저장됩니다. 
-
-    directory: repo, uploads
-
-주기적으로 두 디렉터리는 따로 잘 백업해 주세요. 
+마이그레이션
+---
+- 기본적으로 Yona 에서 Github/Github Enterprise 로 이전하는 기능을 제공합니다.
+    - [Yona에서 Github으로 이사가는 방법](https://repo.yona.io/yona-projects/yona-help/post/4)
+    - [설정](https://github.com/yona-projects/yona/blob/master/conf/application.conf.default#L297)
+- [Yona Export](https://github.com/yona-projects/yona-export)
+    - 프로젝트 로컬 백업
+    - Yona 에서 다른 Yona 인스턴스로 이전 지원
+       - 일명 '출장용 Yona 기능'이라고도 할 수 있는 하는 기능입니다. 
+          - DB내장형 경량 Yona인, [Yona H2 Embedded 버전]을 사용해서 출장/파견 나가서 작업하다가 작업 완료후에 Export 받아서 본점 Yona에 Import 하는 것이 v1.6.0부터 가능합니다.
+    - Export 파일 포맷만 일치시킨다면 어떤 소스로부터도 마이그레이션이나 이동이 가능합니다
 
 
-### DB관련 작업을 한 후 정상적으로 페이지가 뜨지 않을 경우 아래 항목을 확인해 주세요.
+Contribution
+---
+- 코드 기여의 기준이 되는 브랜치는 `master`입니다.
+- 저장소를 fork 한 다음 `master` 브랜치를 기준으로 작업하신다음 `master` 브랜치로 pull request를 보내주세요.
+  - `next`브랜치는 내부 개발용입니다. 어떠한 기능들이 추가되고 있는지 현장을 보고 싶으시면 `next`브랜치를 참고해주세요.
+- 코드리뷰 후 merge 되면 Yona Author로 파일에 기록되며 작은 기념품을 보내드립니다. 
 
-- application.conf 가 제대로 읽히는지
-- application.secret 적용여부
-- db.default.url 확인 
-
-### MariaDB 재시작 방법
-자주하진 마세요!
-DB를 설치한 유저로 DB를 재시작합니다. (root나 sudo 설치했을 경우 명령어 앞에 sudo를 붙여주세요)
-```
-service mysql restart
-
-혹은
-
-/etc/init.d/mysql restart
-
-혹은
-
-mysql.server restart
-```
-참고: http://coolestguidesontheplanet.com/start-stop-mysql-from-the-command-line-terminal-osx-linux/
-
-DB가 정상적으로 재시작되었으면 
-
-### MariaDB 767 byte 에러
-```
-[info] play - database [default] connected at jdbc:mysql://127.0.0.1:3306/yona 
-[error] play - Specified key was too long; max key length is 767 bytes [ERROR:1071, SQLSTATE:42000] 
-Oops, cannot start the server. 
-@6p6j2gap7: Database 'default' is in an inconsistent state!
-```
-이런 에러가 나오는 경우는 아래 두 가지 옵션이 정상적으로 반영되지 않아서 입니다.
-```
-innodb_file_format=barracuda
-innodb_large_prefix=on
-```
-
-위 내용은 my.cnf 에 추가한다음 DB를 시작해 주세요.
-재시작후 root 유저로 접속해서 
-```
-
-MariaDB [(none)]> SHOW VARIABLES LIKE 'innodb_lar%';
-+---------------------+-------+
-| Variable_name       | Value |
-+---------------------+-------+
-| innodb_large_prefix | ON    |
-+---------------------+-------+
-
-MariaDB [(none)]> SHOW VARIABLES LIKE 'innodb_file%';
-+--------------------------+-----------+
-| Variable_name            | Value     |
-+--------------------------+-----------+
-| innodb_file_format       | Barracuda |
-| innodb_file_format_check | ON        |
-| innodb_file_format_max   | Barracuda |
-| innodb_file_per_table    | ON        |
-+--------------------------+-----------+
-```
-처럼 on 되어 있고 file format도 barracuda로 되어 있는지 확인해 보세요.
-
-기타 관련해서는 [이슈 #924](https://github.com/naver/yobi/issues/924)을 참고해 주세요
 
 <br/>
-<br/>
-<br/>
 
-<a name="english"></a>
-[[한국어]](#korean)
+<a name="english"></a>[[한국어]](#korean)
+
+
 Yona
 =======
-
 Yona is a web-based project hosting software.
-
 
 What is Yona?
 --
+Yona is designed to increase the speed and efficiency of your team's work and development.
 
-Yona is a web-based project hosting software.
-To increase productivity and quality of your software Yona offers many features including
+- Issue tracker
+   - Transferable Issue
+   - Issue change history
+- Bulletin board
+- Embedded Git/SVN respository features 
+- Pull-request & Block based code review
+- Online Commit
+- LDAP support
+- Social Login
+- Migration from/to another service/instance
+   - Github/Github Enterprise, Redmine, Yona
 
-- Issue tracker to manage bugs and issues
-- Bulletin board to share documents
-- Git/SVN support embedded
-- Pull-request for collaborative coding
+
+Yona Distribution
+---
+Currently, Yona offers two distributions per version.
+
+#### MariaDB Version
+- Recommended version.
+- Distributed as a file in the similar format as yona-v1.3.0-bin.zip
+- It takes a little effort to install DB, but it can be operated stably.
+
+#### Embedded H2 DB Version
+- Portable version that can be downloaded and run immediately. No need to setting a DB.
+- Distributed as a file in the similar format as yona-h2-v1.3.0-bin.zip
+- It can be used portable. For example, along with USB etc. And it can be carried around with zip as a whole of work.
+ - Not suitable for large-scale team. (over 500 people)
+
+
+How to install
+---
+Basically, Yona installation is in two steps:
+
+- [MariaDB install](docs/install-mariadb.md)
+- [Yona install](docs/install-yona-server.md)
+
+
+If you want to use [Docker](https://www.docker.com/), See https://github.com/pokev25/docker-yona by [pokev25](https://github.com/pokev25)
+
+
+Yona Start/Upgrade/Backup/Trouble Shootings
+---
+- [Start and Restart](docs/yona-run-and-restart.md)
+- [Start Options](docs/yona-run-options.md) for stable operation
+- [Upgrade](docs/yona-upgrade.md)
+- [Backup/Restore](docs/yona-backup-restore.md)
+- [Mail settings for Notification](docs/yona-mail-settings.md)
+- [Trouble Shootings](docs/trouble-shootings.md)
+
+Server Settings
+---
+- [application.conf Settings](docs/application-conf-desc.md)
+- [Social Login Settings](docs/yona-social-login-settings.md)
+
+Migration
+---
+- [Yona Export](https://github.com/yona-projects/yona-export)
+    - Support repository local backup
+    - Yona to another Yoan instance
+    - Any source corresponding to export format, can be imported into Yona
+- Support Yona to Github/Github Enterprise migration
+    - [See here](https://github.com/yona-projects/yona/blob/master/conf/application.conf.default#L297)
+    
+Google Analytics
+---
+- Basically, distributed Yona include Google Analytics. 
+- This data is used to better understand how users use Yona and make constantly improving Yona development.
+- To disable this for any reason, set the following option to false in conf/application.conf file.
+```
+application.send.yona.usage = true
+```
+
+Contribution
+---
+- The branch for contributions is `master`.
+- Fork the repository, then work on the `master` branch and send a pull request to the` master` branch.
+   - The `next` branch is for internal development. If you want to see what features are being added, please refer to the `next` branch.
+
 
 License
 --
-Copyright 2015 NAVER Corp. under the Apache License, Version 2.0
-
-How to install
---------------
-
-### Install from binary
-
-#### Install
-
-Download the latest version of Yona from http://yona.io/yona.zip and unzip it.
-If you have wget and unzip:
-
-    wget http://yona.io/yona.zip
-    unzip yona.zip
-
-#### Start
-
-Go the directory and start Yona. If the directory is yona-1.0.0:
-
-    cd yona-1.0.0
-    bin/yona
-
-**Note**: If you are using Windows, run "bin/yona.bat" instead of "bin/yona".
-
-Open http://127.0.0.1:9000 with your web browser then you can see the welcome
-page.
-
-#### Upgrade
-
-Download the latest version of Yona and unzip it.
-
-**Note: Don't overwrite or delete `yona.h2.db` file, `repo` & `uploads` directory!**
-
-### Build from source
-
-#### Check JDK version
-
-    java -version
-    javac -version
-
-JDK version 7(1.7) or 8(1.8) is required.
-
-#### Download Play Activator
-
-    curl -O http://downloads.typesafe.com/typesafe-activator/1.2.10/typesafe-activator-1.2.10-minimal.zip
-
-or
-
-    wget http://downloads.typesafe.com/typesafe-activator/1.2.10/typesafe-activator-1.2.10-minimal.zip
-
-or using web browser (for windows)
-
-    http://downloads.typesafe.com/typesafe-activator/1.2.10/typesafe-activator-1.2.10-minimal.zip
-
-#### Unzip
-
-    unzip typesafe-activator-1.2.10-minimal.zip
-
-#### Change directory to unzipped directory
-
-    cd activator-1.2.10-minimal
-
-#### Download Yona
-
-Case1. Using [git client](http://git-scm.com/) (recommended)
-    
-    git clone https://github.com/yona-projects/yona.git
-
-or 
-
-Case2. Just download the latest stable release
-If you want to download one of the stable releases, you can download a compressed file by clicking the URL below. And then name it a yona and unzip it.
-
-    https://github.com/yona-projects/yona/archive/master.zip
-    
-**Caution! In case2, You might come across troubles when you try to upgrade Yona.**
-
-> You can locate your own Yona directory in any other place. Please note that you must add Play Activator home path to $PATH environment in that case.
-
-#### Change directory to cloned Yona directory (or cd to your unzipped file directory)
-
-    cd yona
-
-#### Run Play Activator
-
-    ../activator
-
-or (for windows)
-
-    ..\activator
-
-Required files will be download automatically. In the first time, it may take about 10 min or more.
-
-
-#### Type start command in console
-
-    start
-
-It will download additional files and compile sources.
-
-If you want to run Yona in development mode, use **run**. You can see more detailed errors and can use dynamic compilation.
-
-#### Connect with browser
-
-    http://127.0.0.1:9000
-
-If you want to change port, check your permission to use 80 port. See 'Options' section for more information.
-
-#### Upgrade Yona
-
-Case1. Using git client (recommended)
-In installed directory, just type git update command.
-
-    git pull https://github.com/yona-projects/yona.git master
-
-Case2. Download zip file
-
-In installed directory, download the latest release file and unzip it.
-
-    https://github.com/yona-projects/yona/archive/master.zip
-
-**Be careful! Don't overwrite or delete `yona.h2.db` file, `repo` & `uploads` directory!**
-
-**If you are installing Yona in Windows system, you may need set `applyEvolutions.default` Java property to true. See 'Options' section for more information**
-
-### Options
-
-When start yona, You can specify the home directory to contain data for Yona.
-If you want to use `/home/user/.yona` as the home directory, set 'yona.home'
-property as follows:
-
-    bin/yona -Dyona.home=/home/user/.yona
-
-Note: Yona doesn't load the configuration files from the home directory. If you
-want to do that, specify the path to the config files as follows:
-
-    bin/yona -Dyona.home=/home/user/.yona -Dconfig.file=/home/user/.yona/conf/application.conf -Dlogger.file=/home/user/.yona/conf/application-logger.xml
-
-You can also specify Java options with `_JAVA_OPTIONS` environment variable. If
-the memory of your system equals to or greater than 4GB, we recommend to start
-Yona as follows:
-
-    _JAVA_OPTIONS="-Xmx2048m -Xms2048m" activator "start -DapplyEvolutions.default=true -Dhttp.port=9000"
-
-#### Linux and OSX
-
-When start yona, you can specify the home directory to contain data, the
-database file and configuration files for Yona. For example, if you want to
-use `/home/user/.yona` as the home directory, set YONA_HOME as follows:
-
-    YONA_HOME=/home/user/.yona bin/yona
-
-You can also specify Java options with `_JAVA_OPTIONS` environment variable. If
-the memory of your system equals to or greater than 4GB, we recommend to start
-Yona as follows:
-
-    _JAVA_OPTIONS="-Xmx2048m -Xms2048m" bin/yona
-
-Yona use 9000 port for HTTP connection by default. If you want to use another
-port, set http.port Java property.
-
-    _JAVA_OPTIONS="-Dhttp.port=80" bin/yona
-
-#### Windows
-
-When start yona, you can specify the data directory, the config file, the
-config file for logger with yona.home, config.file and logger.file as follows:
-
-    SET JAVA_OPTS=-Dyona.home=/home/user/.yona -Dconfig.file=/home/user/.yona/conf/application.conf -Dlogger.file=/home/user/.yona/conf/application-logger.xml
-    bin\yona.bat
-
-You can specify the database file in `application.conf` as follows:
-
-    db.default.url="jdbc:h2:file:/home/nori/.yona/yona"
-
-You can also specify Java options with `_JAVA_OPTIONS` environment variable. If
-the memory of your system equals to or greater than 4GB, we recommend to start
-Yona as follows:
-
-    SET JAVA_OPTS=-Xmx2048m -Xms2048m
-    bin\yona.bat
-
-Yona use 9000 port for HTTP connection by default. If you want to use another
-port, set http.port Java property.
-
-    _JAVA_OPTIONS=-Dhttp.port=80
-    bin\yona.bat
-
-If you are upgrading Yona from the previous version, the upgrade may fail with
-a warning message that says you need migration as follows:
-
-    [warn] play - Your production database [default] needs evolutions!
-
-In such case, set `applyEvolutions.default` Java property to true and restart
-Yona.
-
-    SET JAVA_OPTS=-DapplyEvolutions.default=true
-    bin\yona.bat
-
-#### For more information about options
-
-See [http://www.playframework.com/documentation/2.3.6/Production](http://www.playframework.com/documentation/2.3.6/Production).
-
-### Backup
-
-Copy the below file and directories to another place.
-
-    file: yona.h2.db
-    directory: repo, uploads
+Copyright Yona Authors and NAVER Corp. under the Apache License, Version 2.0

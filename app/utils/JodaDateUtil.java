@@ -1,30 +1,17 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2012 NAVER Corp.
- * http://yobi.io
- *
- * @author Sangcheol Hwang
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ *  Yona, 21st Century Project Hosting SW
+ *  <p>
+ *  Copyright Yona & Yobi Authors & NAVER Corp.
+ *  https://yona.io
+ **/
 package utils;
 
 import org.apache.commons.lang3.StringUtils;
 import org.joda.time.*;
 
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.Date;
+import java.util.Locale;
 
 public class JodaDateUtil {
     public static String getDateString(Date date) {
@@ -32,9 +19,12 @@ public class JodaDateUtil {
     }
     public static String getDateString(Date date, String format) {
         if(StringUtils.isEmpty(format)) {
-            format = "yyyy-MM-dd HH:mm:ss";
+            format = "yyyy-MM-dd h:mm:ss a";
         }
         SimpleDateFormat sdf = new SimpleDateFormat(format);
+        if (date == null) {
+            return "";
+        }
         return sdf.format(date);
     }
     public static Date today() {
@@ -98,5 +88,39 @@ public class JodaDateUtil {
         return dateTime.withField(DateTimeFieldType.hourOfDay(), 23)
                 .withField(DateTimeFieldType.minuteOfHour(), 59)
                 .withField(DateTimeFieldType.secondOfMinute(), 59).toDate();
+    }
+
+    /**
+     * Show date string by two stage
+     * which in a day and over a day
+     */
+    public static String socialDate(Date date){
+        if (date == null) {
+            return "";
+        }
+        DateTime dateTime = new DateTime(date);
+        boolean isBeforeYesterday = dateTime.isBefore(DateTime.now().minusDays(1) );
+        if(isBeforeYesterday){
+            return dateTime.toString("yyyy-MM-dd h:mm a", Locale.getDefault());
+        }
+
+        return momentFromNow(date, Locale.getDefault().getLanguage());
+    }
+
+    public static String getDateStringWithoutSpace(Date date){
+        if (date == null) {
+            date = new Date();
+        }
+        DateTime dateTime = new DateTime(date);
+        return dateTime.toString("yyyyMMddHHmm", Locale.getDefault());
+    }
+
+
+    public static String geYMDDate(Date date){
+        if (date == null) {
+            return "";
+        }
+        DateTime dateTime = new DateTime(date);
+        return dateTime.toString("yyyy-MM-dd", Locale.getDefault());
     }
 }

@@ -4,12 +4,13 @@ body,div,dl,dt,dd,ul,ol,li,h1,h2,h3,h4,form,fieldset,p,button{
 }
 
 body {
-   background-color: @yobi-background;
-   font-family: @base-font-family;
-   text-rendering: auto !important;
+    background-color: @yobi-background;
+    font-family: @base-font-family;
+    text-rendering: auto !important;
+    overflow-y: scroll;
 }
 
-input, textarea { font-family: @fixed-font-family !important; }
+textarea { font-family: @fixed-font-family !important; }
 button, select { font-family: @base-font-family !important; }
 h1,h2,h3,h4,h5,h6 { text-rendering:auto !important; }
 
@@ -33,6 +34,7 @@ input[type=number]::-webkit-outer-spin-button {
     display: none !important;
     visibility: hidden !important;
 }
+
 .cb { clear:both; }
 .blind {
     overflow:hidden;
@@ -108,12 +110,21 @@ input[type=number]::-webkit-outer-spin-button {
     background:#f0f0f0;
     filter:none;
 
+    &.done-outline {
+        border: 1px solid @light-green;
+    }
+    &.red-outline {
+        border: 1px solid @yona-red;
+    }
     .box-shadow(inset 0px 1px 1px rgba(0,0,0,0.25));
     .bar {
         height:100%;
         filter:none;
         &.orange { background:@orange; .box-shadow(none); } // #f28149
         &.blue   { background:@blue;   .box-shadow(none); }
+        &.grey   { background:@gray-9e;   .box-shadow(none); }
+        &.red    { background:@yona-red;   .box-shadow(none); }
+        &.done   { background:@light-green;   .box-shadow(none); }
         &.open   { background:@state-open; .box-shadow(none); }
         &.closed { background:@state-closed; .box-shadow(none); }
     }
@@ -201,16 +212,22 @@ input[type=number]::-webkit-outer-spin-button {
 .mb20 { margin-bottom:20px; }
 .mr20 { margin-right:20px; }
 .ml5 { margin-left:5px; }
+.ml6 { margin-left:6px; }
+.mr6 { margin-right:6px; }
 .mr5 { margin-right:5px; }
 .mt5 { margin-top:5px; }
 .mt4 { margin-top:4px; }
 .mr3 { margin-right:3px; }
+.pb4 { padding-bottom: 4px}
+.pl0 { padding-left: 0}
 
 .margin-top-20   { margin-top:20px;   }
 .margin-left-20  { margin-left: 20px; }
 .margin-left-5   { margin-left:5px; }
 .margin-right-5  { margin-right:5px;  }
 .margin-right-i2 { margin-right:-2px !important; }
+
+.font12 { font-size: 12px; }
 
 .no-border{ border: none !important; }
 .reverb {
@@ -261,3 +278,31 @@ input.white::-webkit-input-placeholder   { color:#fff; opacity:0.8; }
 input.white:-moz-placeholder             { color:#fff; opacity:0.8; } /* Firefox 18- */
 input.white::-moz-placeholder            { color:#fff; opacity:0.8; } /* Firefox 19+ */
 input.white:-ms-input-placeholder        { color:#fff; opacity:0.8; }
+
+.va-text-top {
+    vertical-align: text-top !important;
+}
+
+.width100p {
+    width: 100%
+}
+
+.text-ellipsis {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.z-index-1 {
+    z-index: 1 !important;
+}
+
+.hideFromDisplayOnly {
+    display: none;
+}
+
+.fixed-height-my-issues-list {
+    line-height: 36px;
+}
+
+.dimgray { color:dimgray; }

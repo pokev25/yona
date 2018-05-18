@@ -1,26 +1,15 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2012 NAVER Corp.
- * http://yobi.io
- *
- * @author Ahn Hyeok Jun
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+ * https://yona.io
+ **/
 package models;
 
-import com.avaje.ebean.*;
+import com.avaje.ebean.Ebean;
+import com.avaje.ebean.ExpressionList;
+import com.avaje.ebean.Page;
+import com.avaje.ebean.RawSqlBuilder;
 import controllers.UserApp;
 import models.enumeration.ResourceType;
 import models.enumeration.RoleType;
@@ -40,14 +29,18 @@ import play.data.validation.Constraints.ValidateWith;
 import play.db.ebean.Model;
 import play.db.ebean.Transactional;
 import play.i18n.Messages;
+import play.mvc.Http;
 import utils.CacheStore;
+import utils.GravatarUtil;
 import utils.JodaDateUtil;
 import utils.ReservedWordsValidator;
 
+import javax.annotation.Nonnull;
 import javax.persistence.*;
-import javax.persistence.OrderBy;
 import java.text.SimpleDateFormat;
 import java.util.*;
+
+import static utils.HtmlUtil.defaultSanitize;
 
 @Table(name = "n4user")
 @Entity
@@ -70,7 +63,7 @@ public class User extends Model implements ResourceConvertible {
 
     public static final Long SITE_MANAGER_ID = 1l;
 
-    public static final String LOGIN_ID_PATTERN = "[a-zA-Z0-9-]+([_.][a-zA-Z0-9-]+)*";
+    public static final String LOGIN_ID_PATTERN = "[a-zA-Z0-9가-힣-]+([_.][a-zA-Z0-9가-힣-]+)*";
     public static final String LOGIN_ID_PATTERN_ALLOW_FORWARD_SLASH = "[a-zA-Z0-9-/]+([_.][a-zA-Z0-9-/]+)*";
 
     public static final User anonymous = new NullUser();
@@ -82,10 +75,11 @@ public class User extends Model implements ResourceConvertible {
      * name to show at web pages
      */
     public String name;
+    public String englishName;
 
     @Pattern(value = "^" + LOGIN_ID_PATTERN + "$", message = "user.wrongloginId.alert")
     @Required
-    @ValidateWith(ReservedWordsValidator.class)
+    @ValidateWith(value = ReservedWordsValidator.class, message = "validation.reservedWord")
     public String loginId;
 
     /**
@@ -172,6 +166,12 @@ public class User extends Model implements ResourceConvertible {
     @OneToMany(mappedBy = "user")
     public List<Mention> mentions;
 
+    @OneToMany(mappedBy = "user")
+    public List<FavoriteProject> favoriteProjects;
+
+    @OneToMany(mappedBy = "user")
+    public List<FavoriteOrganization> favoriteOrganizations;
+
     /**
      * The user's preferred language code which can be recognized by {@link play.api.i18n.Lang#get},
      * such as "ko", "en-US" or "ja". This field is used as a language for notification mail.
@@ -183,6 +183,8 @@ public class User extends Model implements ResourceConvertible {
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
     public List<OrganizationUser> organizationUsers;
+
+    public boolean isGuest = false;
 
     public User() {
     }
@@ -252,7 +254,9 @@ public class User extends Model implements ResourceConvertible {
      */
     public static Long create(User user) {
         user.createdDate = JodaDateUtil.now();
+        user.name = defaultSanitize(user.name);
         user.save();
+        CacheStore.yonaUsers.put(user.id, user);
         return user.id;
     }
 
@@ -292,11 +296,21 @@ public class User extends Model implements ResourceConvertible {
         if(!user.isAnonymous()){
             return user;
         }
-        String userToken = play.mvc.Http.Context.current().request().getHeader(UserApp.USER_TOKEN_HEADER);
+
+        String userToken = extractUserTokenFromRequestHeader(Http.Context.current().request());
         if( userToken != null) {
             return User.findByUserToken(userToken);
         }
         return User.anonymous;
+    }
+
+    public static String extractUserTokenFromRequestHeader(Http.Request request) {
+        String authHeader = request.getHeader("Authorization");
+        if(authHeader != null &&
+                authHeader.contains("token ")) {
+            return authHeader.split("token ")[1];
+        }
+        return request.getHeader(UserApp.USER_TOKEN_HEADER);
     }
 
     /**
@@ -318,6 +332,11 @@ public class User extends Model implements ResourceConvertible {
         Email subEmail = Email.findByEmail(email, true);
         if (subEmail != null) {
             return subEmail.user;
+        }
+
+        User fallback = find.where().ieq("email", email).findUnique();
+        if (fallback != null) {
+            return fallback;
         }
 
         User anonymous = new NullUser();
@@ -370,15 +389,22 @@ public class User extends Model implements ResourceConvertible {
         ExpressionList<User> el = User.find.where();
         el.ne("id",SITE_MANAGER_ID);
         el.ne("loginId",anonymous.loginId);
-        el.eq("state", state);
+        if( state == UserState.GUEST ) {
+            el.eq("isGuest", true);
+        } else {
+            el.eq("state", state);
+        }
 
         if(StringUtils.isNotBlank(query)) {
             el = el.disjunction();
-            el = el.icontains("loginId", query).icontains("name", query).icontains("email", query);
+            el = el.icontains("loginId", query)
+                    .icontains("name", query)
+                    .icontains("englishName", query)
+                    .icontains("email", query);
             el.endJunction();
         }
 
-        return el.findPagingList(USER_COUNT_PER_PAGE).getPage(pageNum);
+        return el.order().desc("createdDate").findPagingList(USER_COUNT_PER_PAGE).getPage(pageNum);
     }
 
     /**
@@ -467,9 +493,18 @@ public class User extends Model implements ResourceConvertible {
      */
     public static void resetPassword(String loginId, String newPassword) {
         User user = findByLoginId(loginId);
-        user.password = new Sha256Hash(newPassword, ByteSource.Util.bytes(user.passwordSalt), 1024)
-                .toBase64();
+        user.password = getHashedStringForPassword(newPassword, user.passwordSalt);
+        CacheStore.yonaUsers.put(user.id, user);
         user.save();
+    }
+
+    public boolean isSamePassword(String newPassword) {
+        return this.password.equals(getHashedStringForPassword(newPassword, this.passwordSalt));
+    }
+
+    private static String getHashedStringForPassword(String newPassword, String salt) {
+        return new Sha256Hash(newPassword, ByteSource.Util.bytes(salt), 1024)
+                .toBase64();
     }
 
     @Override
@@ -518,11 +553,8 @@ public class User extends Model implements ResourceConvertible {
     }
 
     public boolean isMemberOf(Project project) {
-        if (!projectMembersMemo.containsKey(project.id)) {
-            projectMembersMemo.put(project.id, ProjectUser.isMember(id, project.id));
-        }
-
-        return projectMembersMemo.get(project.id);
+        // TODO: Performance! Removed cache. If performance problem is occurred, fix it!
+        return ProjectUser.isMember(id, project.id);
     }
 
     public List<Project> getEnrolledProjects() {
@@ -577,11 +609,13 @@ public class User extends Model implements ResourceConvertible {
     public void enroll(Project project) {
         getEnrolledProjects().add(project);
         this.update();
+        CacheStore.yonaUsers.put(this.id, this);
     }
 
     public void enroll(Organization organization) {
         getEnrolledOrganizations().add(organization);
         this.update();
+        CacheStore.yonaUsers.put(this.id, this);
     }
 
     /**
@@ -592,11 +626,13 @@ public class User extends Model implements ResourceConvertible {
     public void cancelEnroll(Project project) {
         getEnrolledProjects().remove(project);
         this.update();
+        CacheStore.yonaUsers.put(this.id, this);
     }
 
     public void cancelEnroll(Organization organization) {
         getEnrolledOrganizations().remove(organization);
         this.update();
+        CacheStore.yonaUsers.put(this.id, this);
     }
 
     /**
@@ -626,6 +662,7 @@ public class User extends Model implements ResourceConvertible {
         for (Assignee assignee : Assignee.finder.where().eq("user.id", id).findList()) {
             assignee.delete();
         }
+        CacheStore.yonaUsers.invalidate(this.id);
         super.delete();
     }
 
@@ -635,11 +672,11 @@ public class User extends Model implements ResourceConvertible {
         lastStateModifiedDate = new Date();
 
         if (this.state == UserState.DELETED) {
-            name = "DELETED";
+            name = "[DELETED]" + this.name;
             oldPassword = "";
             password = "";
             passwordSalt = "";
-            email = "deleted-" + loginId + "@noreply.yobi.io";
+            email = "deleted-" + loginId + "@noreply.yona.io";
             rememberMe = false;
             projectUser.clear();
             enrolledProjects.clear();
@@ -654,12 +691,23 @@ public class User extends Model implements ResourceConvertible {
         }
 
         update();
+        CacheStore.yonaUsers.put(this.id, this);
     }
 
     public String avatarUrl() {
         Long avatarId = avatarId();
         if (avatarId == null) {
-            return UserApp.DEFAULT_AVATAR_URL;
+            return GravatarUtil.getAvatar(email, 64);
+        }
+        else {
+            return controllers.routes.AttachmentApp.getFile(avatarId).url();
+        }
+    }
+
+    public String avatarUrl(int size) {
+        Long avatarId = avatarId();
+        if (avatarId == null) {
+            return GravatarUtil.getAvatar(email, size);
         }
         else {
             return controllers.routes.AttachmentApp.getFile(avatarId).url();
@@ -683,7 +731,7 @@ public class User extends Model implements ResourceConvertible {
                 .orderBy().asc("t0.name")
                 .findList();
 
-        if (!users.contains(currentUser)) {
+        if (!users.contains(currentUser) && currentUser != User.anonymous) {
             users.add(currentUser);
             Collections.sort(users, new UserComparator());
         }
@@ -705,7 +753,7 @@ public class User extends Model implements ResourceConvertible {
                 .orderBy().asc("t0.name")
                 .findList();
 
-        if (!users.contains(currentUser)) {
+        if (!users.contains(currentUser) && currentUser != User.anonymous) {
             users.add(currentUser);
             Collections.sort(users, new UserComparator());
         }
@@ -777,6 +825,7 @@ public class User extends Model implements ResourceConvertible {
     public void removeEmail(Email email) {
         emails.remove(email);
         email.delete();
+        CacheStore.yonaUsers.put(this.id, this);
     }
 
     public void visits(Project project) {
@@ -816,6 +865,7 @@ public class User extends Model implements ResourceConvertible {
         this.add(ou);
         organization.add(ou);
         this.update();
+        CacheStore.yonaUsers.put(this.id, this);
     }
 
     private void add(OrganizationUser ou) {
@@ -843,5 +893,181 @@ public class User extends Model implements ResourceConvertible {
     @Override
     public int hashCode() {
         return id != null ? id.hashCode() : 0;
+    }
+
+    public List<Project> getFavoriteProjects() {
+        List<Project> projects = new ArrayList<>();
+        for (FavoriteProject favoriteProject : this.favoriteProjects) {
+            favoriteProject.project.refresh();
+            projects.add(0, favoriteProject.project);
+        }
+
+        return projects;
+    }
+
+    public void updateFavoriteProject(@Nonnull Project project){
+        for (FavoriteProject favoriteProject : this.favoriteProjects) {
+            if (favoriteProject.project.id.equals(project.id)) {
+                favoriteProject.project.refresh();
+            }
+        }
+    }
+
+    public void updateFavoriteOrganization(@Nonnull Organization organization){
+        for (FavoriteOrganization favoriteOrganization : this.favoriteOrganizations) {
+            if (favoriteOrganization.organization.id.equals(organization.id)) {
+                favoriteOrganization.organization.refresh();
+            }
+        }
+    }
+
+    public boolean toggleFavoriteProject(Long projectId) {
+        for (FavoriteProject favoriteProject : this.favoriteProjects) {
+            if( favoriteProject.project.id.equals(projectId) ){
+                removeFavoriteProject(projectId);
+                this.favoriteProjects.remove(favoriteProject);
+                RecentProject.deletePrevious(this, favoriteProject.project);
+                return false;
+            }
+        }
+
+        FavoriteProject favoriteProject = new FavoriteProject(this, Project.find.byId(projectId));
+        this.favoriteProjects.add(favoriteProject);
+        favoriteProject.save();
+        return true;
+    }
+
+    public void removeFavoriteProject(Long projectId) {
+        List<FavoriteProject> list = FavoriteProject.finder.where()
+                .eq("user.id", this.id)
+                .eq("project.id", projectId).findList();
+
+        if(list != null && list.size() > 0){
+            favoriteProjects.remove(list.get(0));
+            list.get(0).delete();
+        }
+    }
+
+    public List<Organization> getFavoriteOrganizations() {
+        List<Organization> organizations = new ArrayList<>();
+        for (FavoriteOrganization favoriteOrganization : this.favoriteOrganizations) {
+            favoriteOrganization.organization.refresh();
+            organizations.add(0, favoriteOrganization.organization);
+        }
+
+        return organizations;
+    }
+
+    public boolean toggleFavoriteOrganization(Long organizationId) {
+        for (FavoriteOrganization favoriteOrganization : this.favoriteOrganizations) {
+            if( favoriteOrganization.organization.id.equals(organizationId) ){
+                removeFavoriteOrganization(organizationId);
+                this.favoriteOrganizations.remove(favoriteOrganization);
+                return false;
+            }
+        }
+
+        FavoriteOrganization favoriteOrganization = new FavoriteOrganization(this, Organization.find.byId(organizationId));
+        this.favoriteOrganizations.add(favoriteOrganization);
+        favoriteOrganization.save();
+        return true;
+    }
+
+    private void removeFavoriteOrganization(Long organizationId) {
+        List<FavoriteOrganization> list = FavoriteOrganization.finder.where()
+                .eq("user.id", this.id)
+                .eq("organization.id", organizationId).findList();
+
+        if(list != null && list.size() > 0){
+            favoriteOrganizations.remove(list.get(0));
+            list.get(0).delete();
+        }
+    }
+
+    public List<Project> getIssueMovableProject(){
+        Set<Project> projects = new LinkedHashSet<>();
+        projects.addAll(getFavoriteProjects());
+        projects.addAll(getVisitedProjects());
+        projects.addAll(Project.findProjectsByMember(id));
+        List<Project> list = new ArrayList<>();
+        list.addAll(projects);
+        Collections.sort(list, new Comparator<Project>() {
+            @Override
+            public int compare(Project lhs, Project rhs) {
+                if(lhs.owner.compareToIgnoreCase(rhs.owner) == 0) {
+                    return lhs.name.compareToIgnoreCase(rhs.name);
+                }
+                return lhs.owner.compareToIgnoreCase(rhs.owner);
+            }
+        });
+        return list;
+    }
+
+    public boolean isLocked() {
+        return this.state == UserState.LOCKED || this.state == UserState.DELETED;
+    }
+
+    public String getPureNameOnly(){
+        if (StringUtils.isNotBlank(englishName) && lang != null && UserApp.currentUser().lang.startsWith("en")) {
+            return englishName;
+        }
+        String pureName = this.name;
+        String [] spliters = { "[", "(" };
+        for(String spliter: spliters) {
+            if(pureName.contains(spliter)){
+                pureName = this.name.substring(0, this.name.indexOf(spliter));
+            }
+        }
+
+        return pureName;
+    }
+
+    public String getPureNameOnly(String targetLang){
+        if (StringUtils.isNotBlank(englishName) && lang != null
+                && StringUtils.isNotBlank(targetLang) && targetLang.startsWith("en")) {
+            return englishName;
+        }
+        String pureName = this.name;
+        String [] spliters = { "[", "(" };
+        for(String spliter: spliters) {
+            if(pureName.contains(spliter)){
+                pureName = this.name.substring(0, this.name.indexOf(spliter));
+            }
+        }
+
+        return pureName;
+    }
+
+    public String extractDepartmentPart(){
+        String departmentName = this.name;
+        String [] spliters = { "[", "(" };
+        for(String spliter: spliters) {
+            if(departmentName.contains(spliter)){
+                departmentName = this.name.substring(this.name.indexOf(spliter));
+            }
+        }
+
+        return departmentName;
+
+    }
+
+    public String getDisplayName(){
+        if (UserApp.currentUser().isAnonymous()) {
+            return name;
+        }
+
+        if (StringUtils.isNotBlank(englishName) && lang != null && UserApp.currentUser().lang.startsWith("en")) {
+            return englishName + " " + extractDepartmentPart();
+        } else {
+            return name;
+        }
+    }
+
+    public String getDisplayName(User forCurrentUser){
+        if (StringUtils.isNotBlank(englishName) && lang != null && forCurrentUser.lang.startsWith("en")) {
+            return englishName + " " + extractDepartmentPart();
+        } else {
+            return name;
+        }
     }
 }

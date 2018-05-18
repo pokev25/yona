@@ -337,8 +337,15 @@ public class PullRequestApp extends Controller {
         return pullRequests(userName, projectName, Category.SENT);
     }
 
+    @Transactional
     private static Result pullRequests(String userName, String projectName, Category category) {
         Project project = Project.findByOwnerAndProjectName(userName, projectName);
+
+        // Only members can access code?
+        if(project.isCodeAccessibleMemberOnly && !project.hasMember(UserApp.currentUser())) {
+            return forbidden(ErrorViews.Forbidden.render("error.forbidden", project));
+        }
+
         SearchCondition condition = Form.form(SearchCondition.class).bindFromRequest().get();
         condition.setProject(project).setCategory(category);
         Page<PullRequest> page = PullRequest.findPagingList(condition);
@@ -690,6 +697,12 @@ public class PullRequestApp extends Controller {
         public Long contributorId;
         public int pageNum = Constants.DEFAULT_PAGE;
         public Category category;
+        public Organization organization;
+
+        public SearchCondition setOrganization(Organization organization) {
+            this.organization = organization;
+            return this;
+        }
 
         public SearchCondition setProject(Project project) {
             this.project = project;
@@ -724,6 +737,7 @@ public class PullRequestApp extends Controller {
             clone.contributorId = this.contributorId;
             clone.pageNum = this.pageNum;
             clone.category = this.category;
+            clone.organization = this.organization;
             return clone;
         }
 

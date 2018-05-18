@@ -1,41 +1,32 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2012 NAVER Corp.
- * http://yobi.io
- *
- * @author Sangcheol Hwang
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+ * https://yona.io
+ **/
 package controllers;
 
 import actions.DefaultProjectCheckAction;
 import com.avaje.ebean.*;
 
 import controllers.annotation.AnonymousCheck;
+import controllers.annotation.GuestProhibit;
 import controllers.annotation.IsAllowed;
 import info.schleichardt.play2.mailplugin.Mailer;
+import jxl.write.WriteException;
 import models.*;
 import models.enumeration.*;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
+import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.mail.HtmlEmail;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.NoHeadException;
 import org.tmatesoft.svn.core.SVNException;
+
+import models.resource.Resource;
 import play.Logger;
 import play.data.Form;
 import play.data.validation.Constraints.PatternValidator;
@@ -64,15 +55,18 @@ import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
+import static com.avaje.ebean.Expr.ilike;
 import static play.data.Form.form;
 import static play.libs.Json.toJson;
+import static utils.CacheStore.getProjectCacheKey;
+import static utils.CacheStore.projectMap;
 import static utils.LogoUtil.*;
 import static utils.TemplateHelper.*;
 
 @AnonymousCheck
 public class ProjectApp extends Controller {
 
-    private static final int ISSUE_MENTION_SHOW_LIMIT = 2000;
+    private static final int ISSUE_MENTION_SHOW_LIMIT = 20;
 
     private static final int MAX_FETCH_PROJECTS = 1000;
 
@@ -109,15 +103,18 @@ public class ProjectApp extends Controller {
     }
 
     @IsAllowed(Operation.READ)
+    @Transactional
     public static Result project(String ownerId, String projectName)
             throws IOException, ServletException, SVNException, GitAPIException {
         Project project = Project.findByOwnerAndProjectName(ownerId, projectName);
-        List<History> histories = getProjectHistory(ownerId, project);
-
-        UserApp.currentUser().visits(project);
+        List<History> histories = null;
 
         String tabId = StringUtils.defaultIfBlank(request().getQueryString("tabId"), "readme");
+        if(!tabId.equals("readme")){
+            histories = getProjectHistory(ownerId, project);
+        }
 
+        UserApp.currentUser().visits(project);
         return ok(home.render(getTitleMessage(tabId), project, histories, tabId));
     }
 
@@ -180,7 +177,7 @@ public class ProjectApp extends Controller {
 
         if ((!AccessControl.isGlobalResourceCreatable(user))
                 || (Organization.isNameExist(owner) && !OrganizationUser.isAdmin(organization.id, user.id))) {
-            return forbidden(ErrorViews.Forbidden.render("'" + user.name + "' has no permission"));
+            return forbidden(ErrorViews.Forbidden.render("'" + user.getDisplayName() + "' has no permission"));
         }
 
         if (validateWhenNew(filledNewProjectForm)) {
@@ -197,6 +194,8 @@ public class ProjectApp extends Controller {
 
         saveProjectMenuSetting(project);
         Watch.watch(project.asResource());
+        projectMap.put(getProjectCacheKey(project.owner, project.name), project.id);
+        UserApp.currentUser().visits(project);
 
         return redirect(routes.ProjectApp.project(project.owner, project.name));
     }
@@ -274,11 +273,13 @@ public class ProjectApp extends Controller {
         updatedProject.update();
 
         saveProjectMenuSetting(updatedProject);
+        UserApp.currentUser().updateFavoriteProject(updatedProject);
+        FavoriteProject.updateFavoriteProject(updatedProject);
 
         return redirect(routes.ProjectApp.settingForm(ownerId, updatedProject.name));
     }
 
-    private static void saveProjectMenuSetting(Project project) {
+    public static void saveProjectMenuSetting(Project project) {
         Form<ProjectMenuSetting> filledUpdatedProjectMenuSettingForm = form(ProjectMenuSetting.class).bindFromRequest();
         ProjectMenuSetting updatedProjectMenuSetting = filledUpdatedProjectMenuSettingForm.get();
 
@@ -340,6 +341,10 @@ public class ProjectApp extends Controller {
     @IsAllowed(Operation.DELETE)
     public static Result deleteProject(String ownerId, String projectName) throws Exception {
         Project project = Project.findByOwnerAndProjectName(ownerId, projectName);
+        if (project == null) {
+            return redirect(routes.Application.index());
+        }
+        UserApp.currentUser().removeFavoriteProject(project.id);
         project.delete();
         RepositoryService.deleteRepository(project);
         CacheStore.refreshProjectMap();
@@ -362,8 +367,25 @@ public class ProjectApp extends Controller {
                 Role.findProjectRoles()));
     }
 
+    @Transactional
     @IsAllowed(Operation.READ)
-    public static Result mentionList(String loginId, String projectName, Long number, String resourceType) {
+    public static Result watchers(String loginId, String projectName) {
+        Project project = Project.findByOwnerAndProjectName(loginId, projectName);
+        Resource resource = project.asResource();
+        return ok(views.html.project.watchers.render(
+            "title.projectWatchers",
+            Watch.findActualWatchers(
+                Watch.findWatchers(resource.getType(), resource.getId()),
+                    resource,
+                    true
+                ),
+                project
+        ));
+    }
+
+    @IsAllowed(Operation.READ)
+    public static Result mentionList(String loginId, String projectName, Long number,
+                                     String resourceType, String query, String mentionType) {
         String prefer = HttpUtil.getPreferType(request(), HTML, JSON);
         if (prefer == null) {
             return status(Http.Status.NOT_ACCEPTABLE);
@@ -374,24 +396,33 @@ public class ProjectApp extends Controller {
         Project project = Project.findByOwnerAndProjectName(loginId, projectName);
 
         List<User> userList = new ArrayList<>();
-        collectAuthorAndCommenter(project, number, userList, resourceType);
-        addProjectMemberList(project, userList);
-        addGroupMemberList(project, userList);
-        addProjectAuthorsAndWatchersList(project, userList);
-
-        userList.remove(UserApp.currentUser());
-        userList.add(UserApp.currentUser()); //send me last at list
-
         Map<String, List<Map<String, String>>> result = new HashMap<>();
-        result.put("result", getUserList(project, userList));
-        result.put("issues", getIssueList(project));
+
+        if("user".equalsIgnoreCase(mentionType)){
+            if (StringUtils.isEmpty(query) || !project.isPublic()) {
+                collectAuthorAndCommenter(project, number, userList, resourceType);
+                addProjectMemberList(project, userList);
+                addGroupMemberList(project, userList);
+                addProjectAuthorsAndWatchersList(project, userList);
+            } else {
+                addSearchedUsers(query, userList);
+            }
+
+            userList.remove(UserApp.currentUser());
+            userList.add(UserApp.currentUser()); //send me last at list
+            result.put("result", getUserList(project, userList));
+        }
+
+        if("issue".equalsIgnoreCase(mentionType)) {
+            result.put("result", getIssueList(project, query));
+        }
 
         return ok(toJson(result));
     }
 
-    private static List<Map<String, String>> getIssueList(Project project) {
+    private static List<Map<String, String>> getIssueList(Project project, String query) {
         List<Map<String, String>> mentionListOfIssues = new ArrayList<>();
-        collectedIssuesToMap(mentionListOfIssues, getMentionIssueList(project));
+        collectedIssuesToMap(mentionListOfIssues, getMentionIssueList(project, query));
         return mentionListOfIssues;
     }
 
@@ -406,9 +437,10 @@ public class ProjectApp extends Controller {
     private static void addProjectNameToMentionList(List<Map<String, String>> users, Project project) {
         Map<String, String> projectUserMap = new HashMap<>();
         if(project != null){
-            projectUserMap.put("loginid", project.owner+"/" + project.name);
+            projectUserMap.put("loginid", project.owner + "/" + project.name);
             projectUserMap.put("username", project.name );
             projectUserMap.put("name", project.name);
+            projectUserMap.put("searchText", project.owner + "/" + project.name);
             projectUserMap.put("image", urlToProjectLogo(project).toString());
             users.add(projectUserMap);
         }
@@ -420,6 +452,7 @@ public class ProjectApp extends Controller {
             projectUserMap.put("loginid", project.organization.name);
             projectUserMap.put("username", project.organization.name);
             projectUserMap.put("name", project.organization.name);
+            projectUserMap.put("searchText", project.organization.name);
             projectUserMap.put("image", urlToOrganizationLogo(project.organization).toString());
             users.add(projectUserMap);
         }
@@ -436,9 +469,18 @@ public class ProjectApp extends Controller {
         }
     }
 
-    private static List<Issue> getMentionIssueList(Project project) {
+    private static List<Issue> getMentionIssueList(Project project, String query) {
+        if (StringUtils.isEmpty(query)) {
+            return Issue.finder.where()
+                    .eq("project.id", project.isForkedFromOrigin() ? project.originalProject.id : project.id)
+                    .orderBy("createdDate desc")
+                    .setMaxRows(ISSUE_MENTION_SHOW_LIMIT)
+                    .findList();
+        }
         return Issue.finder.where()
                 .eq("project.id", project.isForkedFromOrigin() ? project.originalProject.id : project.id)
+                .or(ilike("title", "%" + query + "%"),
+                        ilike("number", query + "%"))
                 .orderBy("createdDate desc")
                 .setMaxRows(ISSUE_MENTION_SHOW_LIMIT)
                 .findList();
@@ -448,6 +490,8 @@ public class ProjectApp extends Controller {
     public static Result mentionListAtCommitDiff(String ownerId, String projectName, String commitId, Long pullRequestId)
             throws IOException, UnsupportedOperationException, ServletException, SVNException {
         Project project = Project.findByOwnerAndProjectName(ownerId, projectName);
+        String query = request().getQueryString("query");
+        String mentionType = request().getQueryString("mentionType");
 
         PullRequest pullRequest;
         Project fromProject = project;
@@ -461,16 +505,25 @@ public class ProjectApp extends Controller {
         Commit commit = RepositoryService.getRepository(fromProject).getCommit(commitId);
 
         List<User> userList = new ArrayList<>();
-        addCommitAuthor(commit, userList);
-        addCodeCommenters(commitId, fromProject.id, userList);
-        addProjectMemberList(project, userList);
-        addGroupMemberList(project, userList);
-        userList.remove(UserApp.currentUser());
-        userList.add(UserApp.currentUser()); //send me last at list
-
         Map<String, List<Map<String, String>>> result = new HashMap<>();
-        result.put("result", getUserList(project, userList));
-        result.put("issues", getIssueList(project));
+
+        if("user".equalsIgnoreCase(mentionType)){
+            if (StringUtils.isEmpty(query)) {
+                addCommitAuthor(commit, userList);
+                addCodeCommenters(commitId, fromProject.id, userList);
+                addProjectMemberList(project, userList);
+                addGroupMemberList(project, userList);
+            } else {
+                addSearchedUsers(query, userList);
+            }
+            userList.remove(UserApp.currentUser());
+            userList.add(UserApp.currentUser()); //send me last at list
+            result.put("result", getUserList(project, userList));
+        }
+
+        if("issue".equalsIgnoreCase(mentionType)) {
+            result.put("result", getIssueList(project, query));
+        }
 
         return ok(toJson(result));
     }
@@ -481,26 +534,38 @@ public class ProjectApp extends Controller {
         Project project = Project.findByOwnerAndProjectName(ownerId, projectName);
 
         PullRequest pullRequest = PullRequest.findById(pullRequestId);
-        List<User> userList = new ArrayList<>();
-
-        addCommentAuthors(pullRequestId, userList);
-        addProjectMemberList(project, userList);
-        addGroupMemberList(project, userList);
-        if(!commitId.isEmpty()) {
-            addCommitAuthor(RepositoryService.getRepository(pullRequest.fromProject).getCommit(commitId), userList);
-        }
-
-        User contributor = pullRequest.contributor;
-        if(!userList.contains(contributor)) {
-            userList.add(contributor);
-        }
-
-        userList.remove(UserApp.currentUser());
-        userList.add(UserApp.currentUser()); //send me last at list
 
         Map<String, List<Map<String, String>>> result = new HashMap<>();
-        result.put("result", getUserList(project, userList));
-        result.put("issues", getIssueList(project));
+        List<User> userList = new ArrayList<>();
+
+        String query = request().getQueryString("query");
+        String mentionType = request().getQueryString("mentionType");
+
+        if("user".equalsIgnoreCase(mentionType)) {
+            if (StringUtils.isEmpty(query)) {
+                addCommentAuthors(pullRequestId, userList);
+                addProjectMemberList(project, userList);
+                addGroupMemberList(project, userList);
+                if(!commitId.isEmpty()) {
+                    addCommitAuthor(RepositoryService.getRepository(pullRequest.fromProject).getCommit(commitId), userList);
+                }
+            } else {
+                addSearchedUsers(query, userList);
+            }
+
+            User contributor = pullRequest.contributor;
+            if(!userList.contains(contributor)) {
+                userList.add(contributor);
+            }
+
+            userList.remove(UserApp.currentUser());
+            userList.add(UserApp.currentUser()); //send me last at list
+            result.put("result", getUserList(project, userList));
+        }
+
+        if("issue".equalsIgnoreCase(mentionType)) {
+            result.put("result", getIssueList(project, query));
+        }
 
         return ok(toJson(result));
     }
@@ -569,7 +634,6 @@ public class ProjectApp extends Controller {
         return redirect(url);
     }
 
-    @Transactional
     @AnonymousCheck(requiresLogin = true, displaysFlashMessage = true)
     public static synchronized Result acceptTransfer(Long id, String confirmKey) throws IOException, ServletException {
         ProjectTransfer pt = ProjectTransfer.findValidOne(id);
@@ -588,15 +652,25 @@ public class ProjectApp extends Controller {
 
         // Change the project's name and move the repository.
         String newProjectName = Project.newProjectName(pt.destination, project.name);
-        PlayRepository repository = RepositoryService.getRepository(project);
-        repository.move(project.owner, project.name, pt.destination, newProjectName);
 
-        User newOwnerUser = User.findByLoginId(pt.destination);
-        Organization newOwnerOrg = Organization.findByName(pt.destination);
+        // Following three local variables are used for bottom of this method
+        String originalProjectOwner = project.owner;
+        String originalProjectName = project.name;
+        String destinationOwner = pt.destination;
+        Long senderId = pt.sender.id;
+
+        disableProjectTransferLink(pt, project, newProjectName);
+        PlayRepository repository = RepositoryService.getRepository(project);
+
+        // intentionally placed to the last of method
+        repository.move(originalProjectOwner, originalProjectName, destinationOwner, newProjectName);
+
+        User newOwnerUser = User.findByLoginId(destinationOwner);
+        Organization newOwnerOrg = Organization.findByName(destinationOwner);
 
         // Change the project's information.
         project.recordRenameOrTransferHistoryIfLastChangePassed24HoursFrom(project);
-        project.owner = pt.destination;
+        project.owner = destinationOwner;
         project.name = newProjectName;
         if (newOwnerOrg != null) {
             project.organization = newOwnerOrg;
@@ -606,23 +680,25 @@ public class ProjectApp extends Controller {
         project.update();
 
         // Change roles.
-        if (ProjectUser.isManager(pt.sender.id, project.id)) {
-            ProjectUser.assignRole(pt.sender.id, project.id, RoleType.MEMBER);
+        if (ProjectUser.isManager(senderId, project.id)) {
+            ProjectUser.assignRole(senderId, project.id, RoleType.MEMBER);
         }
         if (!newOwnerUser.isAnonymous()) {
             ProjectUser.assignRole(newOwnerUser.id, project.id, RoleType.MANAGER);
         }
 
-        // Change the tranfer's status to be accepted.
-        pt.newProjectName = newProjectName;
-        pt.accepted = true;
-        pt.update();
-
-        // If the opposite request is exists, delete it.
-        ProjectTransfer.deleteExisting(project, pt.sender, pt.destination);
         CacheStore.refreshProjectMap();
 
         return redirect(routes.ProjectApp.project(project.owner, project.name));
+    }
+
+    private static void disableProjectTransferLink(ProjectTransfer pt, Project project, String newProjectName) {
+        // Change the tranfer's status to be accepted.
+        pt.newProjectName = newProjectName;
+        pt.accepted = true;
+
+        // If the opposite request is exists, delete it.
+        ProjectTransfer.deleteExisting(project, pt.sender, pt.destination);
     }
 
     @IsAllowed(Operation.UPDATE)
@@ -775,12 +851,20 @@ public class ProjectApp extends Controller {
     private static void collectedUsersToMentionList(List<Map<String, String>> users, List<User> userList) {
         for (User user: userList) {
             Map<String, String> projectUserMap = new HashMap<>();
-            if (user != null && !user.loginId.equals(Constants.ADMIN_LOGIN_ID)) {
+            if (user != null && StringUtils.isNotEmpty(user.loginId) && !user.loginId.equals(Constants.ADMIN_LOGIN_ID)) {
                 projectUserMap.put("loginid", user.loginId);
-                projectUserMap.put("username", user.name);
-                projectUserMap.put("name", user.name + user.loginId);
+                projectUserMap.put("searchText", user.name + user.getDisplayName() + user.loginId);
+                projectUserMap.put("name", user.getDisplayName());
                 projectUserMap.put("image", user.avatarUrl());
                 users.add(projectUserMap);
+            }
+        }
+    }
+
+    private static void addSearchedUsers(String query, List<User> userList) {
+        for (User user: User.findUsers(0, query, UserState.ACTIVE).getList()) {
+            if (!userList.contains(user)) {
+                userList.add(user);
             }
         }
     }
@@ -810,7 +894,7 @@ public class ProjectApp extends Controller {
             return;
         }
 
-        for (User user : findAuthorsAndWatchers(project)) {
+        for (User user : project.findAuthorsAndWatchers()) {
             if (!userList.contains(user)) {
                 userList.add(user);
             }
@@ -937,7 +1021,12 @@ public class ProjectApp extends Controller {
      * @param pageNum the page num
      * @return
      */
+    @GuestProhibit
     public static Result projects(String query, int pageNum) {
+        if(Application.HIDE_PROJECT_LISTING){
+            return forbidden(ErrorViews.Forbidden.render("error.auth.unauthorized.waringMessage"));
+        }
+
         String prefer = HttpUtil.getPreferType(request(), HTML, JSON);
         if (prefer == null) {
             return status(Http.Status.NOT_ACCEPTABLE);
@@ -953,6 +1042,9 @@ public class ProjectApp extends Controller {
     }
 
     private static Result getPagingProjects(String query, int pageNum) {
+        if (pageNum < 1) {
+            return notFound(ErrorViews.NotFound.render("error.notfound"));
+        }
         ExpressionList<Project> el = createProjectSearchExpressionList(query);
 
         Set<Long> labelIds = LabelApp.getLabelIds(request());
@@ -961,9 +1053,13 @@ public class ProjectApp extends Controller {
         }
 
         el.orderBy("createdDate desc");
-        Page<Project> projects = el.findPagingList(PROJECT_COUNT_PER_PAGE).getPage(pageNum - 1);
+        Page<Project> projects = getProjectPage(pageNum, el);
 
         return ok(views.html.project.list.render("title.projectList", projects, query));
+    }
+
+    private static Page<Project> getProjectPage(int pageNum, ExpressionList<Project> el) {
+        return el.findPagingList(PROJECT_COUNT_PER_PAGE).getPage(pageNum - 1);
     }
 
     private static Result getProjectsToJSON(String query) {
@@ -999,20 +1095,8 @@ public class ProjectApp extends Controller {
         }
 
         User user = UserApp.currentUser();
-        if (!user.isSiteManager() && !Config.getDisplayPrivateRepositories()) {
-            if(user.isAnonymous()) {
-                el.eq("projectScope", ProjectScope.PUBLIC);
-            } else {
-                Junction<Project> junction = el.conjunction();
-                Junction<Project> pj = junction.disjunction();
-                pj.add(Expr.eq("projectScope", ProjectScope.PUBLIC)); // public
-                List<Organization> orgs = Organization.findOrganizationsByUserLoginId(user.loginId); // protected
-                if(!orgs.isEmpty()) {
-                    pj.and(Expr.in("organization", orgs), Expr.eq("projectScope", ProjectScope.PROTECTED));
-                }
-                pj.add(Expr.eq("projectUser.user.id", user.id)); // private
-                pj.endJunction();
-            }
+        if (!user.isSiteManager() && !Config.displayPrivateRepositories()) {
+            el.eq("projectScope", ProjectScope.PUBLIC);
         }
 
         return el;
@@ -1180,9 +1264,10 @@ public class ProjectApp extends Controller {
             return badRequest(ErrorViews.BadRequest.render());
         }
 
-        Webhook.create(project.id,
-                        addWebhookForm.field("payloadUrl").value(),
-                        addWebhookForm.field("secret").value());
+        Webhook webhook = addWebhookForm.get();
+
+        Webhook.create(project.id, webhook.payloadUrl.trim(), webhook.secret,
+                BooleanUtils.toBooleanDefaultIfNull(webhook.gitPushOnly, false));
 
         return redirect(routes.ProjectApp.webhooks(project.owner, project.name));
     }
@@ -1210,35 +1295,21 @@ public class ProjectApp extends Controller {
         return ok();
     }
 
-    public static Set<User> findAuthorsAndWatchers(@Nonnull Project project) {
-        Set<User> allAuthors = new LinkedHashSet<>();
+    @IsAllowed(Operation.READ)
+    @Transactional
+    public static Result goConventionMenu(String ownerId, String projectName, String state, String format, int pageNum)
+            throws IOException, ServletException, SVNException, GitAPIException, WriteException {
+        Project project = Project.findByOwnerAndProjectName(ownerId, projectName);
+        List<History> histories = null;
 
-        allAuthors.addAll(getIssueUsers(project));
-        allAuthors.addAll(getPostingUsers(project));
-        allAuthors.addAll(getPullRequestUsers(project));
-        allAuthors.addAll(getWatchedUsers(project));
+        if( project.menuSetting.issue ) {
+            return IssueApp.issues(project.owner, project.name, state, format, pageNum);
+        }
 
-        return allAuthors;
+        if( project.menuSetting.board ) {
+            return redirect(routes.BoardApp.posts(project.owner, project.name, pageNum));
+        }
+
+        return redirect(routes.ProjectApp.project(project.owner, project.name));
     }
-
-    private static Set<User> getPostingUsers(Project project) {
-        String postSql = "SELECT distinct author_id id FROM posting where project_id=" + project.id;
-        return User.find.setRawSql(RawSqlBuilder.parse(postSql).create()).findSet();
-    }
-
-    private static Set<User> getIssueUsers(Project project) {
-        String issueSql = "SELECT distinct author_id id FROM ISSUE where project_id=" + project.id;
-        return User.find.setRawSql(RawSqlBuilder.parse(issueSql).create()).findSet();
-    }
-
-    private static Set<User> getPullRequestUsers(Project project) {
-        String postSql = "SELECT distinct contributor_id id FROM pull_request where to_project_id=" + project.id;
-        return User.find.setRawSql(RawSqlBuilder.parse(postSql).create()).findSet();
-    }
-
-    private static Set<User> getWatchedUsers(Project project) {
-        String postSql = "SELECT distinct user_id id FROM watch where resource_type='PROJECT' and resource_id=" + project.id;
-        return User.find.setRawSql(RawSqlBuilder.parse(postSql).create()).findSet();
-    }
-
 }

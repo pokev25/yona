@@ -1,31 +1,61 @@
 package utils
 
-import org.apache.commons.lang3
-import org.apache.commons.lang3.StringUtils
-import play.mvc.Call
+import org.apache.commons.lang3.{ArrayUtils, StringUtils}
+import play.mvc.{Call, Http}
 import org.joda.time.DateTimeConstants
 import org.apache.commons.io.FilenameUtils
 import play.i18n.Messages
-import controllers.routes
-import controllers.UserApp
+import controllers.{Application, UserApp, routes}
 import views.html._
 import java.net.URI
+
 import playRepository.DiffLine
 import playRepository.DiffLineType
 import models.CodeRange.Side
-import scala.StringBuilder
-import scala.collection.JavaConversions._
 import views.html.partial_diff_comment_on_line
 import views.html.partial_diff_line
 import views.html.git.partial_pull_request_event
 import models._
 import java.net.URLEncoder
+import java.util
+import java.util.Date
+
 import scala.annotation.tailrec
 import playRepository.FileDiff
 import play.api.i18n.Lang
 import play.twirl.api.Html
 
+import collection.convert.wrapAll._
+import scala.util.control.Breaks._
+
 object TemplateHelper {
+  def isAllowedOAuthProvider(provider: String): Boolean = {
+    val allowedProviders = play.Configuration.root.getString("application.social.login.support", "").replaceAll(" ", "").split(",")
+    allowedProviders.toStream.contains(provider)
+  }
+
+  def showWatchers(posting: AbstractPosting): String = {
+      "<div class='show-watchers' data-toggle='tooltip' data-placement='top' data-trigger='hover' data-html='true' title='" + Messages.get("watchers") + "'>" +
+      "<button id='watcher-list-button' type='button' class='ybtn'><i class='yobicon-emo-happy'></i><span class='watcherCount'></span></button>" +
+      "</div>"
+  }
+
+  def GithubLogo: String = {"""<span class="github"><svg aria-hidden="true" height="24" version="1.1" viewBox="0 0 16 16" width="19"><path
+  d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59 0.4 0.07 0.55-0.17 0.55-0.38 0-0.19-0.01-0.82-0.01-1.49-2.01 0.37-2.53-0.49-2.69-0.94-0.09-0.23-0.48-0.94-0.82-1.13-0.28-0.15-0.68-0.52-0.01-0.53 0.63-0.01 1.08 0.58 1.23 0.82 0.72 1.21 1.87 0.87 2.33 0.66 0.07-0.52 0.28-0.87 0.51-1.07-1.78-0.2-3.64-0.89-3.64-3.95 0-0.87 0.31-1.59 0.82-2.15-0.08-0.2-0.36-1.02 0.08-2.12 0 0 0.67-0.21 2.2 0.82 0.64-0.18 1.32-0.27 2-0.27 0.68 0 1.36 0.09 2 0.27 1.53-1.04 2.2-0.82 2.2-0.82 0.44 1.1 0.16 1.92 0.08 2.12 0.51 0.56 0.82 1.27 0.82 2.15 0 3.07-1.87 3.75-3.65 3.95 0.29 0.25 0.54 0.73 0.54 1.48 0 1.07-0.01 1.93-0.01 2.2 0 0.21 0.15 0.46 0.55 0.38C13.71 14.53 16 11.53 16 8 16 3.58 12.42 0 8 0z"></path></svg></span>"""}
+
+  def GoogleLogo: String = {
+    val url = routes.Assets.at("images/provider-logo/btn_google_light_normal_ios.svg")
+    s"""<span class="google"><img src="$url"></span>"""
+  }
+
+  def providerWithLogo(provider:String): String = {
+    val googleLogo = routes.Assets.at("images/provider-logo/btn_google_light_normal_ios.svg")
+    provider match {
+      case "github" => s"""<span class="auth-provider-logo">$GithubLogo <span class="provider-name">Sign in with ${Application.GITHUB_NAME}</span></span>"""
+      case "google" => s"""<span class="auth-provider-logo"><img src="$googleLogo" alt="login with Google"> Sign in with Google</span>"""
+      case _ => ""
+    }
+  }
 
   def buildQueryString(call: Call, queryMap: Map[String, String]): String = {
     val baseUrl = call.toString
@@ -66,11 +96,15 @@ object TemplateHelper {
   }
 
   def agoOrDateString(date: java.util.Date) = {
+    var year = JodaDateUtil.getDateString(date, "yyyy")
+    var thisYear = JodaDateUtil.getDateString(new Date(), "yyyy")
     val ago = JodaDateUtil.ago(date)
     if (ago.getStandardDays < 8) {
-        agoString(ago)
+      agoString(ago)
+    } else if (thisYear.equals(year)) {
+      JodaDateUtil.getDateString(date, "MM-dd")
     } else {
-        JodaDateUtil.getDateString(date, "yyyy-MM-dd")
+      JodaDateUtil.getDateString(date, "yyyy-MM-dd")
     }
   }
 
@@ -80,7 +114,7 @@ object TemplateHelper {
     Messages.get(_key, count.toString)
   }
 
-  def urlToPicture(email: String, size: Int = 34) = {
+  def urlToPicture(email: String, size: Int = 64) = {
     GravatarUtil.getAvatar(email, size)
   }
 
@@ -133,8 +167,16 @@ object TemplateHelper {
     }
   }
 
-  def getUserAvatar(user: models.User, avatarSize:String = "small") = {
-    user.refresh();
+  def getUserAvatarUrl(user: models.User, avatarSize: Int): String = {
+    if (user.avatarUrl == UserApp.DEFAULT_AVATAR_URL) {
+      urlToPicture(user.email, avatarSize)
+    } else {
+      user.avatarUrl
+    }
+  }
+
+  def getUserAvatar(user: models.User, avatarSize:String = "small"): String = {
+    user.refresh()
     var userInfoURL = routes.UserApp.userInfo(user.loginId).toString()
 
     "<a href=\"" + userInfoURL + "\" class=\"usf-group\" data-toggle=\"tooltip\" data-placement=\"top\" title=\"" + user.name + "\"><img src=\"" + user.avatarUrl + "\" class=\"avatar-wrap " + avatarSize + "\"></a>"
@@ -143,7 +185,7 @@ object TemplateHelper {
   def urlToProjectBG(project: Project) = {
     models.Attachment.findByContainer(project.asResource) match {
       case files if files.size > 0 => routes.AttachmentApp.getFile(files.head.id)
-      case _ => routes.Assets.at("images/project_default.png")
+      case _ => routes.Assets.at("images/project_default.jpg")
     }
   }
 
@@ -434,6 +476,7 @@ object TemplateHelper {
     }
 
     def urlToPostNewComment(thread: CommentThread) = {
+      thread.project.refresh()
       if(thread.isOnPullRequest){
         routes.PullRequestApp.newComment(thread.project.owner, thread.project.name, thread.pullRequest.id, _getCommitId(thread))
       } else {
@@ -516,10 +559,19 @@ object TemplateHelper {
 
     def getCorrectedPath(filePath:String, fileName:String):String = {
       if(StringUtils.isNotEmpty(filePath) && (filePath.substring(filePath.length() - 1) == "/")){
-        filePath + fileName
+        filePath + getEncodeEachPathName(fileName)
       } else {
-        filePath + "/" + fileName
+        filePath + "/" + getEncodeEachPathName(fileName)
       }
+    }
+
+    def getEncodeEachPathName(path: String): String ={
+      val paths = path.split("/")
+      var encodedPaths = new Array[String](paths.length)
+      for ( i <- 0 until paths.length ) {
+        encodedPaths(i) = HttpUtil.encodeUrlString(paths(i))
+      }
+      encodedPaths.mkString("/")
     }
 
     def getFileRev(vcsType:String, file:com.fasterxml.jackson.databind.JsonNode):String = {
@@ -532,12 +584,12 @@ object TemplateHelper {
   }
 
   def countHtml(icon:String, link:String, count: Int, strong:String = "") = {
-      Html("""<span class="count-groups item-icon %s">
+      Html("""<a href="%s"><span class="count-groups item-icon %s">
         <i class="yobicon-%s"></i>
       </span>
       <span class="count-groups item-count %s">
-        <a href="%s">%d</a>
-      </span> """.format(strong, icon, strong, link, count))
+        %d
+      </span></a> """.format(link, strong, icon, strong, count))
   }
 
   def isMarkdownExtension(path: String):Boolean = {
@@ -590,5 +642,11 @@ object TemplateHelper {
 
   def userInfo(loginId: String) = {
     Config.getContextRoot() + loginId
+  }
+
+  def containsInDefaultMenus(menuName: String) = {
+    val menus = play.Configuration.root.getString("project.default.menus.when.create", "code, issue, pullRequest, review, milestone, board").replaceAll(" ", "").split(",")
+    menus.toStream.contains(menuName)
+
   }
 }

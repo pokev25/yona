@@ -1,24 +1,19 @@
 @**
-* Yobi, Project Hosting SW
+* Yona, 21st Century Project Hosting SW
 *
-* Copyright 2014 NAVER Corp.
-* http://yobi.io
-*
-* @author Jihan Kim
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+* Copyright Yona & Yobi Authors & NAVER Corp.
+* https://yona.io
 **@
+@import utils.LdapService
 @()
+@import com.feth.play.module.pa.views.html._
+@import utils.TemplateHelper._
+@import org.apache.commons.lang3.StringUtils
+
+@isSocialLoginSupport = @{
+  val allowedProviders = play.Configuration.root.getString("application.social.login.support", "").replaceAll(" ", "").split(",")
+  allowedProviders.nonEmpty && StringUtils.isNotBlank(allowedProviders(0))
+}
 
 <div id="loginDialog" class="modal hide loginDialog" tabindex="-1" role="dialog">
   <div class="modal-body">
@@ -26,19 +21,17 @@
       <button type="button" class="close" data-dismiss="modal" aria-hidden="true" class="mr10">&times;</button>
     </div>
     <form action="@routes.UserApp.login()" method="post" class="frm-wrap login-form-wrap">
+      @if(UserApp.useSocialLoginOnly){
+        <div class="btns-row nm">
+          @Messages("app.warn.support.social.login.only")
+        </div>
+      } else {
       <dl>
-        <dt>
-          <label for="loginIdOrEmailD">@Messages("user.login.key")</label>
-        </dt>
         <dd>
-          <input id="loginIdOrEmailD" name="loginIdOrEmail" type="text" class="text email" autocomplete="off">
+          <input id="loginIdOrEmailD" name="loginIdOrEmail" type="text" class="text email" autocomplete="off" placeholder="@Messages("user.login.key")">
         </dd>
-
-        <dt>
-          <label for="passwordD">@Messages("user.password")</label>
-        </dt>
         <dd>
-          <input id="passwordD" name="password" type="password" class="text password" autocomplete="off">
+          <input id="passwordD" name="password" type="password" class="text password" autocomplete="off" placeholder="@Messages("user.password")">
         </dd>
       </dl>
 
@@ -50,18 +43,42 @@
       <div class="btns-row nm">
         <button type="submit" class="ybtn ybtn-primary fullsize">@Messages("button.login")</button>
       </div>
+      }
 
-      <div class="act-row right-txt mt20">
-        <div class="pull-left">
-          <input id="remember-meD" type="checkbox" name="rememberMe" class="checkbox">
-          <label for="remember-meD" class="bg-checkbox">@Messages("title.rememberMe")</label>
-        </div>
-
-        <a href="@routes.PasswordResetApp.lostPassword()">@Messages("title.resetPassword")</a>
-        <span class="gray-txt ml10 mr10">|</span>
-        <a href="@routes.UserApp.signupForm">@Messages("title.signup")</a>
+      <div class="btns-row nm">
+        @currentAuth() { auth =>
+          @if(auth == null) {
+            @if(isSocialLoginSupport) {
+              @if(!UserApp.useSocialLoginOnly) {
+                <div class="social-login-title-line"> @Messages("title.or") </div>
+              }
+            }
+            @forProviders() { p =>
+              @if(isAllowedOAuthProvider(p.getKey)) {
+                <a href="@p.getUrl" class="ybtn oauth-login-btn">@Html(providerWithLogo(p.getKey))</a>
+              }
+            }
+          } else {
+            @if(UserApp.currentUser().isAnonymous){
+              <div class="cache-warning">@Messages("browser.cache.refresh.message")</div>
+            }
+            <a href="@routes.Application.oAuthLogout()" class="ybtn oauth-login-btn">@Messages("title.logout")</a>
+          }
+        }
       </div>
-    </form>
+      @if(!UserApp.useSocialLoginOnly) {
+        <div class="act-row right-txt mt20">
+          <div class="pull-left">
+            <input id="remember-meD" type="checkbox" name="rememberMe" class="checkbox" checked>
+            <label for="remember-meD" class="bg-checkbox">@Messages("title.rememberMe")</label>
+          </div>
+
+          <a href="@routes.PasswordResetApp.lostPassword()">@Messages("title.resetPassword")</a>
+          <span class="gray-txt ml10 mr10">|</span>
+          <a href="@routes.UserApp.signupForm">@Messages("title.signup")</a>
+        </div>
+      }
+      </form>
   </div>
 </div>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/lib/jquery/jquery-ui-1.10.4.custom.min.js")"></script>

@@ -1,27 +1,14 @@
 @**
-* Yobi, Project Hosting SW
+* Yona, 21st Century Project Hosting SW
 *
-* Copyright 2012 NAVER Corp.
-* http://yobi.io
-*
-* @author Ahn Hyeok Jun
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+* Copyright Yona & Yobi Authors & NAVER Corp.
+* https://yona.io
 **@
 @(userForm: play.data.Form[User], user:User)
 
 @import helper._
 @import utils.TemplateHelper._
+@import utils.HtmlUtil
 
 @siteLayout(user.loginId, utils.MenuType.USER) {
 <div class="site-breadcrumb-outer">
@@ -35,9 +22,13 @@
 
         <form id="frmBasic" method="post" action="@routes.UserApp.editUserInfo" class="pull-left">
         <dl>
+            <dt>@Messages("user.loginId")</dt>
+            <dd class="mt10">
+                <input type="text" class="text" value="@user.loginId" readonly>
+            </dd>
           <dt>@Messages("user.name")</dt>
           <dd class="mt10">
-            <input type="text" name="name" class="text" value="@user.name">
+            <input type="text" name="name" class="text" value="@HtmlUtil.defaultSanitize(user.name)">
           </dd>
           <dt>@Messages("user.email")</dt>
           <dd class="mt10">
@@ -55,7 +46,7 @@
 
           <div class="avatar-frm">
             <div class="avatar-wrap xlarge">
-              <img src="@user.avatarUrl" style="width:128px; max-width:none;" />
+              <img src="@user.avatarUrl(256)" style="width:128px; max-width:none;" />
             </div>
             <div class="upload-progress avatar" style="display:none;"><div class="bar orange"></div></div>
             <div class="btn-wrap mt10 center-txt">
@@ -67,6 +58,12 @@
           </div>
         </form>
 
+        <div class="reset-user-visited-list">
+            <hr/>
+            <form method="post" action="@routes.UserApp.resetUserVisitedList">
+                <button type="submit" class="ybtn">@Messages("userinfo.reset.visited.project.list")</button>
+            </form>
+        </div>
         <div id="avatarCropWrap" class="modal hide" role="dialog" data-backdrop="static">
           <div class="modal-header center-txt">
             <div class="avatar-wrap xlarge">

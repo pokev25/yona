@@ -26,6 +26,21 @@ public class Posting extends AbstractPosting {
     public boolean notice;
     public boolean readme;
 
+    @Transient
+    public String issueTemplate;
+
+    //ToDo: Sperate it from posting for online commit
+    @Transient
+    public String path;
+
+    //ToDo: Sperate it from posting for online commit
+    @Transient
+    public String branch;
+
+    //ToDo: Sperate it from posting for online commit
+    @Transient
+    public String lineEnding;
+
     @OneToMany(cascade = CascadeType.ALL)
     public List<PostingComment> comments;
 
@@ -64,6 +79,9 @@ public class Posting extends AbstractPosting {
     public int computeNumOfComments() {
         return comments.size();
     }
+
+    @OneToOne
+    public Posting parent;
 
     public Posting() {
         super();

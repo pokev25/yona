@@ -3,7 +3,7 @@ import java.nio.file.Paths
 
 name := """yona"""
 
-version := "1.0.4"
+version := "1.9.1"
 
 libraryDependencies ++= Seq(
   // Add your project dependencies here,
@@ -12,23 +12,30 @@ libraryDependencies ++= Seq(
   javaEbean,
   javaWs,
   cache,
+  // PlayAuthenticat for social login
+  // https://github.com/joscha/play-authenticate
+  "com.feth" %% "play-authenticate" % "0.6.9",
+  // OWASP Java HTML Sanitizer
+  // https://www.owasp.org/index.php/OWASP_Java_HTML_Sanitizer_Project
+  "com.googlecode.owasp-java-html-sanitizer" % "owasp-java-html-sanitizer" % "20160628.1",
   // Add your project dependencies here,
   "com.h2database" % "h2" % "1.3.176",
   // JDBC driver for mariadb
-  "org.mariadb.jdbc" % "mariadb-java-client" % "1.3.6",
-  "net.contentobjects.jnotify" % "jnotify" % "0.94",
+  "org.mariadb.jdbc" % "mariadb-java-client" % "1.5.5",
   // Core Library
-  "org.eclipse.jgit" % "org.eclipse.jgit" % "3.5.3.201412180710-r",
+  "org.eclipse.jgit" % "org.eclipse.jgit" % "4.5.0.201609210915-r",
   // Smart HTTP Servlet
-  "org.eclipse.jgit" % "org.eclipse.jgit.http.server" % "3.5.3.201412180710-r",
-  // Symlink support for Java7
-  "org.eclipse.jgit" % "org.eclipse.jgit.java7" % "3.5.3.201412180710-r",
+  "org.eclipse.jgit" % "org.eclipse.jgit.http.server" % "4.5.0.201609210915-r",
+  // JGit Large File Storage
+  "org.eclipse.jgit" % "org.eclipse.jgit.lfs" % "4.5.0.201609210915-r",
+  // JGit Archive Formats
+  "org.eclipse.jgit" % "org.eclipse.jgit.archive" % "4.5.0.201609210915-r",
   // svnkit
-  "org.tmatesoft.svnkit" % "svnkit" % "1.8.12",
+  "org.tmatesoft.svnkit" % "svnkit" % "1.8.15",
   // svnkit-dav
-  "sonia.svnkit" % "svnkit-dav" % "1.8.5-scm2",
+  "sonia.svnkit" % "svnkit-dav" % "1.8.15-scm1",
   // javahl
-  "org.tmatesoft.svnkit" % "svnkit-javahl16" % "1.8.11",
+  "org.tmatesoft.svnkit" % "svnkit-javahl16" % "1.8.15",
   "net.sourceforge.jexcelapi" % "jxl" % "2.6.10",
 // shiro
   "org.apache.shiro" % "shiro-core" % "1.2.1",
@@ -52,11 +59,15 @@ libraryDependencies ++= Seq(
   "org.mozilla" % "rhino" % "1.7.7.1"
 )
 
+libraryDependencies += "org.apache.subversion" % "svn-javahl-api" % "1.9.0"
+
 val projectSettings = Seq(
   // Add your own project settings here
-  resolvers += "jgit-repository" at "http://download.eclipse.org/jgit/maven",
-  resolvers += "scm-manager release repository" at "http://maven.scm-manager.org/nexus/content/groups/public",
-  resolvers += "tmatesoft release repository" at "http://maven.tmatesoft.com/content/repositories/releases",
+  resolvers += "jgit-repository" at "https://repo.eclipse.org/content/groups/releases/",
+  resolvers += "java-semVer" at "https://oss.sonatype.org/content/repositories/snapshots/",
+  resolvers += "scm-manager release repository" at "https://maven.scm-manager.org/nexus/content/groups/public",
+  resolvers += "tmatesoft release repository" at "https://maven.tmatesoft.com/content/repositories/releases",
+  resolvers += "tmatesoft snapshot repository" at "https://maven.tmatesoft.com/content/repositories/snapshots",
   resolvers += "julienrf.github.com" at "http://julienrf.github.com/repo/",
   resolvers += "opencast-public" at "http://nexus.opencast.org/nexus/content/repositories/public",
   resolvers += "jfrog" at "http://repo.jfrog.org/artifactory/libs-releases/", 
@@ -68,7 +79,6 @@ val projectSettings = Seq(
   includeFilter in (Assets, LessKeys.less) := "*.less",
   excludeFilter in (Assets, LessKeys.less) := "_*.less",
   javaOptions in test ++= Seq("-Xmx2g", "-Xms1g", "-XX:MaxPermSize=1g", "-Dfile.encoding=UTF-8"),
-  javacOptions ++= Seq("-Xlint:all", "-Xlint:-path"),
   scalacOptions ++= Seq("-feature")
 )
 
@@ -88,8 +98,12 @@ NativePackagerKeys.bashScriptExtraDefines += """# Added by build.sbt
     |[ -z "$YONA_HOME" ] && YONA_HOME=$(cd "$(realpath "$(dirname "$(realpath "$0")")")/.."; pwd -P)
     |addJava "-Dyobi.home=$YONA_HOME"
     |
-    |yobi_config_file="$YONA_HOME"/conf/application.conf
-    |yobi_log_config_file="$YONA_HOME"/conf/application-logger.xml
+    |[ -z "$YONA_DATA" ] && YONA_DATA=$(cd "$(realpath "$(dirname "$(realpath "$0")")")/.."; pwd -P)
+    |addJava "-Dyona.data=$YONA_DATA"
+    |addJava "-Dapplication.home=$YONA_DATA"
+    |
+    |yobi_config_file="$YONA_DATA"/conf/application.conf
+    |yobi_log_config_file="$YONA_DATA"/conf/application-logger.xml
     |[ -f "$yobi_config_file" ] && addJava "-Dconfig.file=$yobi_config_file"
     |[ -f "$yobi_log_config_file" ] && addJava "-Dlogger.file=$yobi_log_config_file"
     |
@@ -97,7 +111,8 @@ NativePackagerKeys.bashScriptExtraDefines += """# Added by build.sbt
     |""".stripMargin
 
 NativePackagerKeys.batScriptExtraDefines += """
-    | if "%JAVA_OPTS%"=="" SET JAVA_OPTS=-Duser.dir=%YONA_HOME% -Dyona.home=%YONA_HOME% -Dconfig.file=%YONA_HOME%\conf\application.conf -Dlogger.file=%YONA_HOME%\conf\application-logger.xml -DapplyEvolutions.default=true
+    | set "APP_CLASSPATH=%APP_LIB_DIR%\*"
+    | if NOT "%YONA_DATA%" == "" set "YONA_OPTS=-DapplyEvolutions.default=true -Duser.dir=%YONA_HOME% -Dyona.data=%YONA_DATA% -Dconfig.file=%YONA_DATA%\conf\application.conf -Dlogger.file=%YONA_DATA%\conf\application-logger.xml"
     |""".stripMargin
 
 lazy val yobi = (project in file("."))
@@ -124,3 +139,6 @@ lazy val yobi = (project in file("."))
           </FindBugsFilter>
         )
       )
+
+
+fork in run := true

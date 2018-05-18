@@ -20,6 +20,8 @@
  */
 package playRepository;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import controllers.UserApp;
 import controllers.routes;
 import models.Project;
@@ -33,14 +35,19 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.tika.Tika;
 import org.apache.tika.metadata.Metadata;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.eclipse.jgit.api.ArchiveCommand;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.LogCommand;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.archive.ZipFormat;
+import org.eclipse.jgit.attributes.AttributesNode;
+import org.eclipse.jgit.attributes.AttributesNodeProvider;
+import org.eclipse.jgit.attributes.AttributesRule;
 import org.eclipse.jgit.blame.BlameResult;
 import org.eclipse.jgit.diff.*;
 import org.eclipse.jgit.diff.Edit.Type;
+import org.eclipse.jgit.errors.AmbiguousObjectException;
+import org.eclipse.jgit.errors.IncorrectObjectTypeException;
 import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.lib.*;
 import org.eclipse.jgit.lib.RefUpdate.Result;
@@ -60,14 +67,13 @@ import org.eclipse.jgit.util.io.NullOutputStream;
 import org.tmatesoft.svn.core.SVNException;
 import play.Logger;
 import play.libs.Json;
+import play.mvc.Results.Chunks;
+import utils.ChunkedOutputStream;
 import utils.FileUtil;
 import utils.GravatarUtil;
 
 import javax.naming.LimitExceededException;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
@@ -955,11 +961,11 @@ public class GitRepository implements PlayRepository {
     }
 
     private static File getRootDirectory() {
-        return new File(utils.Config.getYobiHome(), getRepoPrefix());
+        return new File(utils.Config.getYonaDataDir(), getRepoPrefix());
     }
 
     private static File getRootDirectoryForMerging() {
-        return new File(utils.Config.getYobiHome(), getRepoForMergingPrefix());
+        return new File(utils.Config.getYonaDataDir(), getRepoForMergingPrefix());
     }
 
     /**
@@ -1110,7 +1116,7 @@ public class GitRepository implements PlayRepository {
             diffFormatter.setDetectRenames(true);
             return diffFormatter.scan(commitA, commitB);
         } finally {
-            diffFormatter.release();
+            diffFormatter.close();
         }
     }
 
@@ -1148,7 +1154,7 @@ public class GitRepository implements PlayRepository {
                     .setStartCommit(start).call();
             return getAuthorsFromBlameResult(edits, blameResult);
         } finally {
-            diffFormatter.release();
+            diffFormatter.close();
         }
     }
 
@@ -1269,7 +1275,7 @@ public class GitRepository implements PlayRepository {
                     RevWalk revWalk = new RevWalk(fromRepo);
                     RevCommit commit = revWalk.parseCommit(fromRepo.resolve(branchName));
                     String commitName = commit.name(); // fromBranch's head commit name
-                    revWalk.release();
+                    revWalk.close();
 
                     // check whether the target repository has the commit witch is the fromBranch's head commit.
                     Repository toRepo = buildGitRepository(pullRequest.toProject);
@@ -1310,7 +1316,7 @@ public class GitRepository implements PlayRepository {
             throw new RuntimeException(e);
         } finally {
             if(revWalk != null) {
-                revWalk.release();
+                revWalk.close();
             }
             if(repo != null) {
                 repo.close();
@@ -1506,6 +1512,11 @@ public class GitRepository implements PlayRepository {
                 }
                 return union;
             }
+
+            @Override
+            public void close() {
+                play.Logger.warn("MultipleRepositoryObjectReader#close - Not implemented method but called!");
+            }
         }
 
         final MultipleRepositoryObjectReader reader = new MultipleRepositoryObjectReader();
@@ -1536,6 +1547,11 @@ public class GitRepository implements PlayRepository {
             }
 
             @Override
+            public AttributesNodeProvider createAttributesNodeProvider() {
+                return new EmptyAttributesNodeProvider();
+            }
+
+            @Override
             public void scanForRepoChanges() throws IOException {
                 throw new UnsupportedOperationException();
             }
@@ -1552,6 +1568,32 @@ public class GitRepository implements PlayRepository {
 
             public ObjectReader newObjectReader() {
                 return reader;
+            }
+
+            // Borrowed from org.eclipse.jgit.internal.storage.dfs.DfsRepository
+            class EmptyAttributesNodeProvider implements AttributesNodeProvider {
+                private EmptyAttributesNodeProvider.EmptyAttributesNode emptyAttributesNode
+                        = new EmptyAttributesNodeProvider.EmptyAttributesNode();
+
+                public AttributesNode getInfoAttributesNode() throws IOException {
+                    return emptyAttributesNode;
+                }
+
+                public AttributesNode getGlobalAttributesNode() throws IOException {
+                    return emptyAttributesNode;
+                }
+
+                class EmptyAttributesNode extends AttributesNode {
+
+                    public EmptyAttributesNode() {
+                        super(Collections.<AttributesRule> emptyList());
+                    }
+
+                    @Override
+                    public void parse(InputStream in) throws IOException {
+                        // Do nothing
+                    }
+                }
             }
         };
 
@@ -1791,7 +1833,7 @@ public class GitRepository implements PlayRepository {
 
     @Override
     public String getDefaultBranch() throws IOException {
-        return repository.getRef(Constants.HEAD).getTarget().getName();
+        return repository.findRef(Constants.HEAD).getTarget().getName();
     }
 
     @Override
@@ -1901,5 +1943,24 @@ public class GitRepository implements PlayRepository {
 
     public Repository getRepository() {
         return repository;
+    }
+
+    public void getArchive(Chunks.Out<byte[]> out, String branchName){
+        Git git = new Git(getRepository());
+        ArchiveCommand.registerFormat("zip", new ZipFormat());
+        try {
+            ChunkedOutputStream cos = new ChunkedOutputStream(out, 16384);
+            git.archive()
+                    .setTree(getRepository().resolve(branchName))
+                    .setFormat("zip")
+                    .setOutputStream(cos)
+                    .call();
+        } catch (IncorrectObjectTypeException | AmbiguousObjectException | GitAPIException e) {
+            play.Logger.error(e.getMessage());
+        } catch (IOException e){
+            play.Logger.error(e.getMessage());
+        } finally{
+            ArchiveCommand.unregisterFormat("zip");
+        }
     }
 }

@@ -1,23 +1,9 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2013 NAVER Corp.
- * http://yobi.io
- *
- * @author Yi EungJun
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+ * https://yona.io
+ **/
 package models.enumeration;
 
 import play.i18n.Messages;
@@ -47,7 +33,13 @@ public enum EventType {
     ISSUE_REFERRED_FROM_PULL_REQUEST("notification.type.issue.referred.from.pullrequest", 16),
     REVIEW_THREAD_STATE_CHANGED("notification.type.review.state.changed", 18),
     ORGANIZATION_MEMBER_ENROLL_REQUEST("notification.organization.type.member.enroll",19),
-    COMMENT_UPDATED("notification.type.comment.updated", 20);
+    COMMENT_UPDATED("notification.type.comment.updated", 20),
+    ISSUE_MOVED("notification.type.issue.is.moved", 21),
+    ISSUE_SHARER_CHANGED("notification.type.issue.sharer.changed", 22),
+    ISSUE_LABEL_CHANGED("notification.type.issue.label.changed", 23),
+    ISSUE_MILESTONE_CHANGED("notification.type.milestone.changed", 24),
+    POSTING_BODY_CHANGED("notification.type.posting.body.changed", 25),
+    RESOURCE_DELETED("notification.type.resource.deleted", 26);
 
     private String descr;
 
@@ -92,5 +84,10 @@ public enum EventType {
             default:
                 return false;
         }
+    }
+
+    @Override
+    public String toString() {
+        return name();
     }
 }

@@ -1,22 +1,8 @@
 @**
-* Yobi, Project Hosting SW
+* Yona, 21st Century Project Hosting SW
 *
-* Copyright 2013 NAVER Corp.
-* http://yobi.io
-*
-* @author Jihan Kim
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+* Copyright Yona & Yobi Authors & NAVER Corp.
+* https://yona.io
 **@
 @(message: String, project: Project, histories: List[models.History], tabId: String)
 @import org.apache.commons.lang.StringUtils
@@ -32,7 +18,7 @@
     if (tab == tabId) {"active"}
 }
 
-@projectLayout(message, project, utils.MenuType.PROJECT_HOME) {
+@projectLayout(project.name + " - " + Messages("menu.home") + " |:| " + project.overview, project, utils.MenuType.PROJECT_HOME) {
 @projectMenu(project, utils.MenuType.PROJECT_HOME, "")
 <div class="page-wrap-outer">
     <div class="project-page-wrap">
@@ -76,17 +62,11 @@
                         <a href="@routes.ProjectApp.project(project.owner, project.name)">README</a>
                     </li>
 
-                    @if(histories.size > 0) {
                     <li class="@isActiveTab("history")">
                         <a href="@buildQueryString(routes.ProjectApp.project(project.owner, project.name), Map("tabId"->"history"))">
                             @Messages("project.history.recent")
-
-                            @defining(histories.get(0).getWhen){ when =>
-                                <span class="historyAgo old" title="@JodaDateUtil.getDateString(when)">@agoOrDateString(when)</span>
-                            }
                         </a>
                     </li>
-                    }
 
                     <li class="@isActiveTab("dashboard")">
                         <a href="@buildQueryString(routes.ProjectApp.project(project.owner, project.name), Map("tabId"->"dashboard"))">
@@ -137,47 +117,6 @@
                             }
                         }
                     }
-
-                    <div class="inner project-info">
-                        <header>
-                            <h3>@Messages("project.info")</h3>
-                            @if(isAllowed(UserApp.currentUser(), project.labelsAsResource(), Operation.UPDATE)){
-                            <button type="button" class="ybtn ybtn-minimum" data-toggle="button" id="label-editor-toggle"><i class="yobicon-edit"></i> @Messages("button.edit")</button>
-                            }
-                        </header>
-                        <ul class="infos" id="label-board">
-                            <!-- labels are added here by yobi.project.Home.js -->
-                        </ul>
-
-                        <script id="label-delete-button-template" type="text/x-jquery-tmpl">
-                            <a href="javascript:void(0)">&times;</a>
-                        </script>
-
-                        <script id="label-template" type="text/x-jquery-tmpl">
-                            <span class="label">${name}</span>
-                        </script>
-
-                        <script id="category-template" type="text/x-jquery-tmpl">
-                            <li class="info" data-category="${category}">
-                                <strong>${category} : </strong>
-                                <span class="label-list"></span>
-                            </li>
-                        </script>
-
-                        <script id="plus-button-template" type="text/x-jquery-tmpl">
-                            <button class="ybtn ybtn-minimum">
-                                <i class="yobicon-plus"></i>
-                            </button>
-                        </script>
-
-                        <script id="label-input-template" type="text/x-jquery-tmpl">
-                            <input type="text" autocomplete="off" class="text" style="margin-bottom: 0px;">
-                        </script>
-
-                        <script id="label-submit-template" type="text/x-jquery-tmpl">
-                            <button type="button" class="ybtn ybtn-mini">@Messages("button.add")</button>
-                        </script>
-                    </div>
                     <div class="inner member-info">
                         <header>
                             <h3>@Messages("project.members")</h3>
@@ -193,7 +132,7 @@
                                         <img src="@member.avatarUrl" alt="@member.loginId" width="24" height="24">
                                     </a>
                                     <a href="@routes.UserApp.userInfo(member.loginId)" class="name">
-                                        <strong>@member.name (@member.loginId)</strong>
+                                        <strong>@member.getDisplayName (@member.loginId)</strong>
                                     </a>
                                 </li>
                                 }

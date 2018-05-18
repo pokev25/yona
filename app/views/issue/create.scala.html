@@ -1,24 +1,12 @@
 @**
-* Yobi, Project Hosting SW
+* Yona, 21st Century Project Hosting SW
 *
-* Copyright 2012 NAVER Corp.
-* http://yobi.io
-*
-* @author Ahn Hyeok Jun
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+* Copyright Yona & Yobi Authors & NAVER Corp.
+* https://yona.io
 **@
-@(title:String, issueForm: play.data.Form[Issue], project:Project)
+@import play.data.Form
+@import org.apache.commons.lang3.StringUtils
+@(title:String, issueForm: Form[Issue], project:Project, issueTemplate:String = "")
 @import helper._
 @import scala.collection.mutable.Map
 @import models.enumeration.ResourceType
@@ -26,6 +14,15 @@
 @import utils.AccessControl._
 @import utils.TemplateHelper._
 @import controllers.UserApp
+
+@parentIssueId = @{
+    play.mvc.Http.Context.current().request().getQueryString("parentIssueId")
+}
+
+@isFromGlobalMenuNew = @{
+    routes.IssueApp.newDirectIssueForm.toString().equals(requestHeader.path) ||
+            routes.IssueApp.newDirectMyIssueForm.toString().equals(requestHeader.path)
+}
 
 @projectLayout(Messages(title), project, utils.MenuType.ISSUE) {
 @projectMenu(project, utils.MenuType.ISSUE, "main-menu-only")
@@ -36,12 +33,14 @@
         <div class="row-fluid">
             <div class="span12">
                 <dl>
-                    <dt>
-                        <label for="title">@Messages("title")</label>
-                    </dt>
                     <dd>
                     	@defining(issueForm.errors().get("title")) { errors =>
-                        <input type="text" id="title" name="title" value="" class="text title zen-mode @if(errors != null) {error}" maxlength="250" tabindex="1">
+                            <div class="span12">
+                                <div class="span11">
+                                    <input type="text" id="title" name="title" value="" class="text title @if(errors != null) {error}" maxlength="250" tabindex="1" placeholder="@Messages("title")">
+                                </div>
+                                <div class="span1 subtask-message">@Messages("issue.option")</div>
+                            </div>
     	                    @if(errors != null) {
     							<div class="message">
     							@for(error <- errors) {
@@ -49,6 +48,11 @@
     							}
     							</div>
     						}
+                            @if(StringUtils.isNotEmpty(parentIssueId)) {
+                                @partial_select_subtask(project, Long.parseLong(parentIssueId), null)
+                            } else {
+                                @partial_select_subtask(project, null, null)
+                            }
     					}
                     </dd>
                 </dl>
@@ -58,7 +62,11 @@
                 <div class="span9 span-left-pane">
                     <dl>
                         <dd style="position: relative;">
+                        @if(StringUtils.isNotBlank(parentIssueId)) {
                             @common.editor("body", "", "tabindex=2", "content-body")
+                        } else {
+                            @common.editor("body", issueTemplate, "tabindex=2", "content-body")
+                        }
                         </dd>
                     </dl>
 
@@ -73,7 +81,7 @@
                      --><a href="javascript:history.back();" class="ybtn">@Messages("button.cancel")</a>
                     </div>
                 </div>
-                <div class="span3 span-hard-wrap">
+                <div class="span3 span-hard-wrap right-menu">
                     @if(isProjectResourceCreatable(UserApp.currentUser(), project, ResourceType.ISSUE_ASSIGNEE)) {
                     <dl class="issue-option">
                          <dt>@Messages("issue.assignee")</dt>
@@ -119,7 +127,7 @@
                         </dd>
                     </dl>
 
-                    @partial_select_label(IssueLabel.findByProject(project), null, "issue-option", "data-close-on-select=false")
+                    @partial_select_label(IssueLabel.findByProject(project), null, "issue-option", "data-close-on-select=false", project)
                 </div>
             </div>
         </div>
@@ -136,6 +144,8 @@
 <link rel="stylesheet" type="text/css" media="screen" href="@routes.Assets.at("javascripts/lib/atjs/jquery.atwho.css")">
 <script type="text/javascript" src="@routes.Assets.at("javascripts/lib/atjs/jquery.caret.min.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/lib/atjs/jquery.atwho.js")"></script>
+<script type="text/javascript" src="@routes.Assets.at("javascripts/common/yona.Subtask.js")"></script>
+<script type="text/javascript" src="@routes.Assets.at("javascripts/service/yona.issue.Assginee.js")"></script>
 <script type="text/javascript">
     $(function(){
         // yobi.issue.Write
@@ -153,6 +163,16 @@
             "target": 'textarea[id^=editor-]',
             "url"   : "@routes.ProjectApp.mentionList(project.owner, project.name)"
         });
+
+        if(@isFromGlobalMenuNew) {
+            $(".subtask-message").trigger("click");
+        }
+
+        yonaAssgineeModule(
+                "@api.routes.IssueApi.findAssignableUsersOfProject(project.owner, project.name)",
+                "",
+                "@Messages("issue.assignee")"
+        );
     });
 </script>
 }

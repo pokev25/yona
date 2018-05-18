@@ -1,54 +1,58 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2013 NAVER Corp.
- * http://yobi.io
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp.
+ * https://yona.io
+ **/
 package controllers;
 
 import com.avaje.ebean.ExpressionList;
+import com.avaje.ebean.Page;
 import com.avaje.ebean.annotation.Transactional;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.feth.play.module.mail.Mailer;
+import com.feth.play.module.mail.Mailer.Mail;
+import com.feth.play.module.mail.Mailer.Mail.Body;
+import com.feth.play.module.pa.PlayAuthenticate;
 import controllers.annotation.AnonymousCheck;
+import jxl.write.WriteException;
 import models.*;
 import models.enumeration.Operation;
 import models.enumeration.UserState;
+import models.support.LdapUser;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.shiro.crypto.RandomNumberGenerator;
 import org.apache.shiro.crypto.SecureRandomNumberGenerator;
 import org.apache.shiro.crypto.hash.Sha256Hash;
 import org.apache.shiro.util.ByteSource;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.joda.time.LocalDateTime;
 import play.Configuration;
 import play.Logger;
 import play.Play;
 import play.data.Form;
 import play.i18n.Messages;
 import play.libs.Json;
-import play.mvc.*;
+import play.mvc.BodyParser;
+import play.mvc.Controller;
+import play.mvc.Http;
 import play.mvc.Http.Cookie;
+import play.mvc.Result;
 import utils.*;
 import views.html.user.*;
-import org.joda.time.LocalDateTime;
 
+import javax.naming.AuthenticationException;
+import javax.naming.CommunicationException;
+import javax.naming.NamingException;
+import java.io.IOException;
 import java.util.*;
 
+import static com.feth.play.module.mail.Mailer.getEmailName;
+import static models.NotificationMail.isAllowedEmailDomains;
 import static play.data.Form.form;
 import static play.libs.Json.toJson;
+import static utils.HtmlUtil.defaultSanitize;
+import static utils.LdapService.FALLBACK_TO_LOCAL_LOGIN;
 
 public class UserApp extends Controller {
     public static final String SESSION_USERID = "userId";
@@ -62,7 +66,7 @@ public class UserApp extends Controller {
     public static final String DEFAULT_AVATAR_URL
             = routes.Assets.at("images/default-avatar-128.png").url();
     private static final int AVATAR_FILE_LIMIT_SIZE = 1024*1000*1; //1M
-    public static final int MAX_FETCH_USERS = 1000;
+    public static final int MAX_FETCH_USERS = 10;  //Match value to Typeahead deafult value at yobi.ui.Typeaheds.js
     private static final int HASH_ITERATIONS = 1024;
     public static final int DAYS_AGO = 7;
     public static final int UNDEFINED = 0;
@@ -72,12 +76,25 @@ public class UserApp extends Controller {
     public static final String TOKEN_USER = "TOKEN_USER";
     public static final String USER_TOKEN_HEADER = "Yona-Token";
 
+    public static final boolean useSocialLoginOnly = play.Configuration.root()
+            .getBoolean("application.use.social.login.only", false);
+    public static final String FLASH_MESSAGE_KEY = "message";
+    public static final String FLASH_ERROR_KEY = "error";
+    private static boolean usingEmailVerification = play.Configuration.root()
+            .getBoolean("application.use.email.verification", false);
+
     @AnonymousCheck
     public static Result users(String query) {
-        if (!request().accepts("application/json")) {
+        String referer = StringUtils.defaultString(request().getHeader("referer"), "");
+        if (!referer.endsWith("members") || !request().accepts("application/json")) {
             return status(Http.Status.NOT_ACCEPTABLE);
         }
 
+        if(StringUtils.isEmpty(query)){
+            return ok(toJson(new ArrayList<>()));
+        }
+
+        List<Map<String, String>> users = new ArrayList<>();
         ExpressionList<User> el = User.find.select("loginId, name").where()
             .ne("state", UserState.DELETED).disjunction();
         el.icontains("loginId", query);
@@ -90,7 +107,6 @@ public class UserApp extends Controller {
             response().setHeader("Content-Range", "items " + MAX_FETCH_USERS + "/" + total);
         }
 
-        List<Map<String, String>> users = new ArrayList<>();
         for (User user : el.findList()) {
             StringBuilder sb = new StringBuilder();
             sb.append(String.format("<img class='mention_image' src='%s'>", user.avatarUrl()));
@@ -106,7 +122,15 @@ public class UserApp extends Controller {
         return ok(toJson(users));
     }
 
+    public static void noCache(final Http.Response response) {
+        // http://stackoverflow.com/questions/49547/making-sure-a-web-page-is-not-cached-across-all-browsers
+        response.setHeader(Http.Response.CACHE_CONTROL, "no-cache, no-store, must-revalidate");  // HTTP 1.1
+        response.setHeader(Http.Response.PRAGMA, "no-cache");  // HTTP 1.0.
+        response.setHeader(Http.Response.EXPIRES, "0");  // Proxies.
+    }
+
     public static Result loginForm() {
+        noCache(response());
         if(!UserApp.currentUser().isAnonymous()) {
             return redirect(routes.Application.index());
         }
@@ -117,7 +141,14 @@ public class UserApp extends Controller {
         if(StringUtils.isEmpty(redirectUrl) && !StringUtils.equals(loginFormUrl, referer)) {
             redirectUrl = request().getHeader("Referer");
         }
-        return ok(login.render("title.login", form(AuthInfo.class), redirectUrl));
+
+        //Assume oAtuh is passed but not linked with existed account
+        if(PlayAuthenticate.isLoggedIn(session())){
+            UserApp.linkWithExistedOrCreateLocalUser();
+            return redirect(redirectUrl);
+        } else {
+            return ok(views.html.user.login.render("title.login", form(AuthInfo.class), redirectUrl));
+        }
     }
 
     public static Result logout() {
@@ -128,6 +159,12 @@ public class UserApp extends Controller {
     }
 
     public static Result login() {
+        noCache(response());
+        if(useSocialLoginOnly){
+            flash(FLASH_ERROR_KEY,
+                    Messages.get("app.warn.support.social.login.only"));
+            return Application.index();
+        }
         if (HttpUtil.isJSONPreferred(request())) {
             return loginByAjaxRequest();
         } else {
@@ -167,7 +204,7 @@ public class UserApp extends Controller {
 
         User sourceUser = User.findByLoginKey(authInfoForm.get().loginIdOrEmail);
 
-        if (isUseSignUpConfirm()) {
+        if (isUsingSignUpConfirm()) {
             if (User.findByLoginId(sourceUser.loginId).state == UserState.LOCKED) {
                 flash(Constants.WARNING, "user.locked");
                 return redirect(getLoginFormURLWithRedirectURL());
@@ -179,8 +216,21 @@ public class UserApp extends Controller {
             return redirect(getLoginFormURLWithRedirectURL());
         }
 
-        User authenticate = authenticateWithPlainPassword(sourceUser.loginId, authInfoForm.get().password);
+        User authenticate = User.anonymous;
+        if (LdapService.useLdap) {
+            authenticate =  authenticateWithLdap(authInfoForm.get().loginIdOrEmail, authInfoForm.get().password);
+        } else {
+            authenticate = authenticateWithPlainPassword(sourceUser.loginId, authInfoForm.get().password);
+        }
 
+        if (!authenticate.isAnonymous()) {
+            authenticate.refresh();
+        }
+
+        if(authenticate.isLocked()){
+            flash(Constants.WARNING, "user.locked");
+            return logout();
+        }
         if (!authenticate.isAnonymous()) {
             addUserInfoToSession(authenticate);
 
@@ -196,12 +246,24 @@ public class UserApp extends Controller {
             if(StringUtils.isEmpty(redirectUrl)){
                 return redirect(routes.Application.index());
             } else {
-                return redirect(redirectUrl);
+                return redirect(encodedPath(redirectUrl));
             }
         }
 
         flash(Constants.WARNING, "user.login.invalid");
-        return redirect(routes.UserApp.loginForm());
+        return redirect(getLoginFormURLWithRedirectURL());
+    }
+
+    private static String encodedPath(String path){
+        String[] paths = path.split("/");
+        if(paths.length == 0){
+            return "/";
+        }
+        String[] encodedPaths = new String[paths.length];
+        for (int i=0; i< paths.length; i++) {
+            encodedPaths[i] = HttpUtil.encodeUrlString(paths[i]);
+        }
+        return String.join("/", encodedPaths);
     }
 
     /**
@@ -225,7 +287,7 @@ public class UserApp extends Controller {
 
         User sourceUser = User.findByLoginKey(authInfoForm.get().loginIdOrEmail);
 
-        if (isUseSignUpConfirm()) {
+        if (isUsingSignUpConfirm()) {
             if (User.findByLoginId(sourceUser.loginId).state == UserState.LOCKED) {
                 return forbidden(getObjectNodeWithMessage("user.locked"));
             }
@@ -235,13 +297,23 @@ public class UserApp extends Controller {
             return notFound(getObjectNodeWithMessage("user.deleted"));
         }
 
-        User user = authenticateWithPlainPassword(sourceUser.loginId, authInfoForm.get().password);
+        User user = User.anonymous;
+        if (LdapService.useLdap) {
+            user =  authenticateWithLdap(authInfoForm.get().loginIdOrEmail, authInfoForm.get().password);
+        } else {
+            user = authenticateWithPlainPassword(sourceUser.loginId, authInfoForm.get().password);
+        }
+
+        if(user.isLocked()){
+            return forbidden(getObjectNodeWithMessage("user.locked"));
+        }
 
         if (!user.isAnonymous()) {
             if (authInfoForm.get().rememberMe) {
                 setupRememberMe(user);
             }
 
+            user.refresh();
             user.lang = play.mvc.Http.Context.current().lang().code();
             user.update();
             addUserInfoToSession(user);
@@ -308,14 +380,204 @@ public class UserApp extends Controller {
         validate(newUserForm);
         if (newUserForm.hasErrors()) {
             return badRequest(signup.render("title.signup", newUserForm));
-        } else {
-            User user = createNewUser(newUserForm.get());
-            if (user.state == UserState.LOCKED) {
-                flash(Constants.INFO, "user.signup.requested");
+        }
+
+        if (!isAllowedEmailDomains(newUserForm.get().email)) {
+            flash(Constants.INFO, "user.unacceptable.email.domain");
+            play.Logger.warn("Signup rejected: " + newUserForm.get().name + " with " + newUserForm.get().email);
+            return badRequest(signup.render("title.signup", newUserForm));
+        }
+
+        User user = createNewUser(newUserForm.get());
+        if (isUsingEmailVerification()) {
+            if (isAllowedEmailDomains(user.email)) {
+                flash(Constants.INFO, "user.verification.mail.sent");
             } else {
-                addUserInfoToSession(user);
+                flash(Constants.INFO, "user.unacceptable.email.domain");
             }
+        }
+        if (user.state == UserState.LOCKED && isUsingSignUpConfirm()) {
+            flash(Constants.INFO, "user.signup.requested");
+        } else {
+            addUserInfoToSession(user);
+        }
+        return redirect(routes.Application.index());
+    }
+
+    private static String newLoginIdWithoutDup(final String candidate, int num) {
+        String newLoginIdSuggestion = candidate + "" + num;
+        if(User.findByLoginId(newLoginIdSuggestion).isAnonymous()){
+            return newLoginIdSuggestion;
+        } else {
+            num = num + 1;
+            return newLoginIdWithoutDup(newLoginIdSuggestion, num);
+        }
+    }
+
+    public static User createLocalUserWithOAuth(UserCredential userCredential){
+        if(userCredential.email == null || "null".equalsIgnoreCase(userCredential.email)) {
+            flash(FLASH_ERROR_KEY,
+                    Messages.get("app.warn.cannot.access.email.information"));
+            play.Logger.error("Cannot confirm email address of " + userCredential.id + ": " + userCredential.name);
+            userCredential.delete();
+            forceOAuthLogout();
+            return User.anonymous;
+        }
+
+        if (!isAllowedEmailDomains(userCredential.email)) {
+            flash(Constants.INFO, "user.unacceptable.email.domain");
+            play.Logger.warn("Signup rejected: " + userCredential.name + " with " + userCredential.email);
+            userCredential.delete();
+            forceOAuthLogout();
+            return User.anonymous;
+        }
+        CandidateUser candidateUser = new CandidateUser(userCredential.name, userCredential.email);
+        User created = createUserDelegate(candidateUser);
+
+        if(isUsingEmailVerification() && created.isLocked()){
+            flash(Constants.INFO, "user.verification.mail.sent");
+            forceOAuthLogout();
+        } else if (created.state == UserState.LOCKED) {
+            flash(Constants.INFO, "user.signup.requested");
+            forceOAuthLogout();
+        }
+
+        //Also, update userCredential
+        userCredential.loginId = created.loginId;
+        userCredential.user = created;
+        userCredential.update();
+
+        return created;
+    }
+
+    private static void forceOAuthLogout() {
+        session().put("pa.url.orig", routes.Application.oAuthLogout().url());
+    }
+
+    private static User createUserDelegate(CandidateUser candidateUser) {
+        String loginIdCandidate = candidateUser.getLoginId();
+
+        User user = new User();
+
+        if (StringUtils.isBlank(loginIdCandidate) || LdapService.USE_EMAIL_BASE_LOGIN) {
+            loginIdCandidate = candidateUser.getEmail().substring(0, candidateUser.getEmail().indexOf("@"));
+            loginIdCandidate = generateLoginId(user, loginIdCandidate);
+        }
+
+        user.loginId = loginIdCandidate;
+        user.name = candidateUser.getName();
+        user.email = candidateUser.getEmail();
+
+        if(StringUtils.isEmpty(candidateUser.getPassword())){
+            user.password = (new SecureRandomNumberGenerator()).nextBytes().toBase64();  // random password because created with OAuth
+        } else {
+            user.password = candidateUser.getPassword();
+        }
+
+        user.isGuest = candidateUser.isGuest();
+        return createNewUser(user);
+    }
+
+    public static Result verifyUser(String loginId, String verificationCode){
+        if(!UserApp.currentUser().isAnonymous()) {
             return redirect(routes.Application.index());
+        }
+        UserVerification uv = UserVerification.findbyLoginIdAndVerificationCode(loginId, verificationCode);
+        if(uv == null){
+            return notFound("Invalid verification");
+        }
+        if (uv.isValidDate()) {
+            User user = User.findByLoginId(loginId);
+            user.state = UserState.ACTIVE;
+            user.update();
+            uv.invalidate();
+            return ok(verified.render("", loginId));
+        }
+        return notFound("Invalid verification");
+    }
+
+    private static void sendMailAfterUserCreation(User created) {
+        if (!isAllowedEmailDomains(created.email)) {
+            flash(Constants.INFO, "user.unacceptable.email.domain");
+            return;
+        }
+        Mail mail = new Mail(Messages.get("user.verification.signup.confirm")
+                + ": " + getServeIndexPageUrl(),
+                getNewAccountMailBody(created),
+                new String[] { getEmailName(created.email, created.name) });
+        Mailer mailer = Mailer.getCustomMailer(Configuration.root().getConfig("play-easymail"));
+        mailer.sendMail(mail);
+    }
+
+    private static Body getNewAccountMailBody(User user){
+        String passwordResetUrl = getServeIndexPageUrl() + routes.PasswordResetApp.lostPassword();
+        StringBuilder html = new StringBuilder();
+        StringBuilder plainText = new StringBuilder();
+
+        if(isUsingEmailVerification()){
+            setVerificationMessage(user, html, plainText);
+        }
+        setSignupInfomation(user, passwordResetUrl, html, plainText);
+        return new Body(plainText.toString(), html.toString());
+    }
+
+    private static void setSignupInfomation(User user, String passwordResetUrl, StringBuilder html, StringBuilder plainText) {
+        html.append("URL: <a href='").append(getServeIndexPageUrl()).append("'>")
+                    .append(getServeIndexPageUrl()).append("</a><br/>\n")
+                .append("ID: ").append(user.loginId).append("<br/>\n")
+                .append("Email: ").append(user.email).append("<br/>\n<br/>\n")
+                .append("Password reset: <a href='").append(passwordResetUrl).append("' target='_blank'>")
+                .append(passwordResetUrl).append("</a><br/>\n");
+        plainText.append("URL: ").append(getServeIndexPageUrl()).append("\n")
+                .append("ID: ").append(user.loginId).append("\n")
+                .append("Email: ").append(user.email).append("\n\n")
+                .append("Password reset: ").append(passwordResetUrl).append("\n");
+    }
+
+    private static void setVerificationMessage(User user, StringBuilder html, StringBuilder plainText) {
+        UserVerification verification = UserVerification.findbyUser(user);
+        if(verification == null){
+            verification = UserVerification.newVerification(user);
+        }
+        String verificationUrl = getServeIndexPageUrl()
+                + routes.UserApp.verifyUser(user.loginId, verification.verificationCode).toString();
+        html.append("<h1>").append(Messages.get("user.verification")).append("</h1>\n");
+        html.append("<hr />\n");
+        html.append("<p><a href='").append(verificationUrl).append("'>")
+                .append(Messages.get("user.verification.link.click")).append("</a></p>\n");
+        html.append("<br />\n");
+        html.append("<br />\n");
+
+        plainText.append(Messages.get("user.verification")).append("\n");
+        plainText.append("--------------------------\n");
+        plainText.append(verificationUrl).append("\n");
+        plainText.append("\n");
+        plainText.append("\n");
+    }
+
+    private static String getServeIndexPageUrl(){
+        StringBuilder url = new StringBuilder();
+        if(request().secure()){
+            url.append("https://");
+        } else {
+            url.append("http://");
+        }
+        url.append(utils.Config.getHostport("localhost:9000"));
+
+        return url.toString();
+    }
+
+    private static String generateLoginId(User user, String loginIdCandidate) {
+        User sameLoginIdUser = User.findByLoginId(loginIdCandidate);
+        if (sameLoginIdUser.isAnonymous()) {
+            return loginIdCandidate;
+        } else {
+            sameLoginIdUser = User.findByLoginId(loginIdCandidate + "-yona");
+            if (sameLoginIdUser.isAnonymous()) {
+                return loginIdCandidate + "-yona";   // first dup, then use suffix "-yona"
+            } else {
+                return newLoginIdWithoutDup(loginIdCandidate, 2);
+            }
         }
     }
 
@@ -347,6 +609,12 @@ public class UserApp extends Controller {
 
     }
 
+    public static Result resetUserVisitedList() {
+        RecentProject.deleteAll(currentUser());
+        flash(Constants.INFO, "userinfo.reset.visited.project.list.done");
+        return redirect(routes.UserApp.editUserInfoForm());
+    }
+
     public static boolean isValidPassword(User currentUser, String password) {
         String hashedOldPassword = hashedPassword(password, currentUser.passwordSalt);
         return currentUser.password.equals(hashedOldPassword);
@@ -358,6 +626,7 @@ public class UserApp extends Controller {
         user.save();
     }
 
+    @Transactional
     public static User currentUser() {
         User user = getUserFromSession();
         if (!user.isAnonymous()) {
@@ -381,10 +650,10 @@ public class UserApp extends Controller {
             return invalidSession();
         }
         User user = null;
-        if (userKey != null && CacheStore.sessionMap.get(userKey) != null){
-            user = User.find.byId(CacheStore.sessionMap.get(userKey));
+        if ((userKey != null && Long.valueOf(userId) != null)){
+            user = CacheStore.yonaUsers.getIfPresent(Long.valueOf(userId));
         }
-        if (user == null) {
+        if (user == null || user.isLocked()) {
             return invalidSession();
         }
         return user;
@@ -396,7 +665,14 @@ public class UserApp extends Controller {
             return (User) cached;
         }
         initTokenUser();
-        return (User) Http.Context.current().args.get(TOKEN_USER);
+        User foundUser = (User) Http.Context.current().args.get(TOKEN_USER);
+
+        if(foundUser.isLocked()) {
+            processLogout();
+            return User.anonymous;
+        }
+
+        return foundUser;
     }
 
     public static void initTokenUser() {
@@ -434,6 +710,21 @@ public class UserApp extends Controller {
     }
 
     @AnonymousCheck
+    public static Result userFiles(){
+        final int USER_FILES_COUNT_PER_PAGE = 50;
+        String pageNumString = request().getQueryString("pageNum");
+        String filter = request().getQueryString("filter");
+        int pageNum = 1;
+
+        if (StringUtils.isNotEmpty(pageNumString)){
+            pageNum = Integer.parseInt(pageNumString);
+        }
+
+        Page<Attachment> page = Attachment.findByUser(currentUser(), USER_FILES_COUNT_PER_PAGE, pageNum, filter);
+        return ok(userFiles.render("User Files", page));
+    }
+
+    @AnonymousCheck
     public static Result userInfo(String loginId, String groups, int daysAgo, String selected) {
         Organization org = Organization.findByName(loginId);
         if(org != null) {
@@ -462,12 +753,26 @@ public class UserApp extends Controller {
         List<Issue> issues = new ArrayList<>();
         List<PullRequest> pullRequests = new ArrayList<>();
         List<Milestone> milestones = new ArrayList<>();
+        List<Project> projects = new ArrayList<>();
 
-        List<Project> projects = collectProjects(loginId, user, groupNames);
-        collectDatum(projects, postings, issues, pullRequests, milestones, daysAgo);
-        sortDatum(postings, issues, pullRequests, milestones);
+        if(Application.HIDE_PROJECT_LISTING){
+            if(!UserApp.currentUser().isAnonymous() && UserApp.currentUser().loginId.equals(loginId)){
+                projects = collectProjects(loginId, user, groupNames);
+                collectDatum(projects, postings, issues, pullRequests, milestones, daysAgo);
+                sortDatum(postings, issues, pullRequests, milestones);
 
-        sortByLastPushedDateAndName(projects);
+                sortByLastPushedDateAndName(projects);
+            }
+        } else {
+            projects = collectProjects(loginId, user, groupNames);
+            collectDatum(projects, postings, issues, pullRequests, milestones, daysAgo);
+            sortDatum(postings, issues, pullRequests, milestones);
+
+            sortByLastPushedDateAndName(projects);
+        }
+        if (user.isAnonymous()) {
+            return notFound(ErrorViews.NotFound.render("user.notExists.name"));
+        }
         return ok(view.render(user, groupNames, projects, postings, issues, pullRequests, milestones, daysAgo, selected));
     }
 
@@ -559,7 +864,8 @@ public class UserApp extends Controller {
 
     private static void addProjectNotDupped(List<Project> target, List<Project> foundProjects) {
         for (Project project : foundProjects) {
-            if( !target.contains(project) ) {
+            if( !target.contains(project) &&
+                    AccessControl.isAllowed(UserApp.currentUser(), project.asResource(), Operation.READ)) {
                 target.add(project);
             }
         }
@@ -594,10 +900,15 @@ public class UserApp extends Controller {
                     user.save();
                 }
                 return ok(edit_token.render(userForm, user));
-            default:
             case PROFILE:
                 return ok(edit.render(userForm, user));
+            default:
+                return ok(edit.render(userForm, user));
         }
+    }
+
+    public static boolean isUsingEmailVerification() {
+        return usingEmailVerification;
     }
 
     private enum UserInfoFormTabType {
@@ -634,7 +945,7 @@ public class UserApp extends Controller {
     public static Result editUserInfo() {
         Form<User> userForm = new Form<>(User.class).bindFromRequest("name", "email");
         String newEmail = userForm.data().get("email");
-        String newName = userForm.data().get("name");
+        String newName = defaultSanitize(userForm.data().get("name"));
         User user = UserApp.currentUser();
 
         if (StringUtils.isEmpty(newEmail)) {
@@ -650,7 +961,7 @@ public class UserApp extends Controller {
             return badRequest(edit.render(userForm, user));
         }
         user.email = newEmail;
-        user.name = newName;
+        user.name = HtmlUtil.defaultSanitize(newName);
 
         try {
             Long avatarId = Long.valueOf(userForm.data().get("avatarId"));
@@ -672,6 +983,7 @@ public class UserApp extends Controller {
 
         Email.deleteOtherInvalidEmails(user.email);
         user.update();
+        CacheStore.yonaUsers.put(user.id, user);
         return redirect(routes.UserApp.userInfo(user.loginId, DEFAULT_GROUP, DAYS_AGO, DEFAULT_SELECTED_TAB));
     }
 
@@ -839,13 +1151,78 @@ public class UserApp extends Controller {
         return User.anonymous;
     }
 
-    public static boolean isUseSignUpConfirm(){
-        Configuration config = play.Play.application().configuration();
-        String useSignUpConfirm = config.getString("signup.require.confirm");
-        return useSignUpConfirm != null && useSignUpConfirm.equals("true");
+    public static User authenticateWithLdap(String loginIdOrEmail, String password) {
+        LdapService ldapService = new LdapService();
+        try {
+            LdapUser ldapUser = ldapService.authenticate(loginIdOrEmail, password);
+            play.Logger.debug("l: " + ldapUser);
+
+            User localUserFoundByLdapLogin = User.findByEmail(ldapUser.getEmail());
+            if (localUserFoundByLdapLogin.isAnonymous()) {
+                return createNewUser(password, ldapUser);
+            } else {
+                if(!localUserFoundByLdapLogin.isSamePassword(password)) {
+                    User.resetPassword(localUserFoundByLdapLogin.loginId, password);
+                }
+
+                localUserFoundByLdapLogin.refresh();
+                localUserFoundByLdapLogin.name = ldapUser.getDisplayName();
+                if(StringUtils.isNotBlank(ldapUser.getEnglishName())){
+                    localUserFoundByLdapLogin.englishName = ldapUser.getEnglishName();
+                }
+                localUserFoundByLdapLogin.isGuest = ldapUser.isGuestUser();
+                localUserFoundByLdapLogin.update();
+                return localUserFoundByLdapLogin;
+            }
+        } catch (CommunicationException e) {
+            play.Logger.error("Cannot connect to ldap server \n" + e.getMessage());
+            e.printStackTrace();
+            if(FALLBACK_TO_LOCAL_LOGIN){
+                play.Logger.warn("fallback to local login: " + loginIdOrEmail);
+                return authenticateWithPlainPassword(loginIdOrEmail, password);
+            }
+            return User.anonymous;
+        } catch (AuthenticationException e) {
+            flash(Constants.WARNING, Messages.get("user.login.invalid"));
+            play.Logger.warn("login failed \n" + e.getMessage());
+            if(FALLBACK_TO_LOCAL_LOGIN){
+                play.Logger.warn("fallback to local login: " + loginIdOrEmail);
+                return authenticateWithPlainPassword(loginIdOrEmail, password);
+            }
+            return User.anonymous;
+        } catch (NamingException e) {
+            play.Logger.error("Cannot connect to ldap server \n" + e.getMessage());
+            e.printStackTrace();
+            return User.anonymous;
+        }
     }
 
-    private static void setupRememberMe(User user) {
+    private static User createNewUser(String password, LdapUser ldapUser) {
+        CandidateUser candidateUser = new CandidateUser(
+                ldapUser.getDisplayName(),
+                ldapUser.getEmail(),
+                ldapUser.getUserLoginId(),
+                password,
+                ldapUser.isGuestUser()
+        );
+        User created = createUserDelegate(candidateUser);
+        if (created.state == UserState.LOCKED) {
+            flash(Constants.INFO, "user.signup.requested");
+            return User.anonymous;
+        }
+        return created;
+    }
+
+    public static boolean isUsingSignUpConfirm(){
+        Configuration config = play.Play.application().configuration();
+        Boolean useSignUpConfirm = config.getBoolean("signup.require.admin.confirm");
+        if(useSignUpConfirm == null) {
+            useSignUpConfirm = config.getBoolean("signup.require.confirm", false); // for compatibility under v1.1
+        }
+        return useSignUpConfirm;
+    }
+
+    public static void setupRememberMe(User user) {
         response().setCookie(TOKEN, user.loginId + ":" + user.password, MAX_AGE);
         Logger.debug("remember me enabled");
     }
@@ -878,28 +1255,58 @@ public class UserApp extends Controller {
         }
     }
 
-    private static User createNewUser(User user) {
+    public static User createNewUser(User user) {
         RandomNumberGenerator rng = new SecureRandomNumberGenerator();
         user.passwordSalt = rng.nextBytes().toBase64();
         user.password = hashedPassword(user.password, user.passwordSalt);
-        User.create(user);
-        if (isUseSignUpConfirm()) {
-            user.changeState(UserState.LOCKED);
+        if (isUsingSignUpConfirm() || isUsingEmailVerification()) {
+            user.state = UserState.LOCKED;
         } else {
-            user.changeState(UserState.ACTIVE);
+            user.state = UserState.ACTIVE;
         }
+        User.create(user);
         Email.deleteOtherInvalidEmails(user.email);
+        if (isUsingEmailVerification()) {
+            UserVerification.newVerification(user);
+            sendMailAfterUserCreation(user);
+        }
         return user;
     }
 
     public static void addUserInfoToSession(User user) {
+        if(user.isLocked()){
+            return;
+        }
         String key = new Sha256Hash(new Date().toString(), ByteSource.Util.bytes(user.passwordSalt), 1024)
                 .toBase64();
-        CacheStore.sessionMap.put(key, user.id);
+        CacheStore.yonaUsers.put(user.id, user);
         session(SESSION_USERID, String.valueOf(user.id));
         session(SESSION_LOGINID, user.loginId);
         session(SESSION_USERNAME, user.name);
         session(SESSION_KEY, key);
+    }
+
+    public static boolean linkWithExistedOrCreateLocalUser() {
+        final UserCredential oAuthUser = UserCredential.findByAuthUserIdentity(PlayAuthenticate
+                .getUser(Http.Context.current().session()));
+        User user = null;
+        if (oAuthUser.loginId == null) {
+            user = User.findByEmail(oAuthUser.email);
+        } else {
+            user = User.findByLoginId(oAuthUser.loginId);
+        }
+
+        if(PlayAuthenticate.isLoggedIn(session()) && user.isAnonymous()){
+            return !createLocalUserWithOAuth(oAuthUser).isAnonymous();
+        } else {
+            if (oAuthUser.loginId == null) {
+                oAuthUser.loginId = user.loginId;
+                oAuthUser.user = user;
+                oAuthUser.update();
+            }
+            UserApp.addUserInfoToSession(user);
+        }
+        return true;
     }
 
     public static void updatePreferredLanguage() {
@@ -958,5 +1365,20 @@ public class UserApp extends Controller {
         } else {
             return false;
         }
+    }
+
+    @AnonymousCheck
+    public static Result setDefaultLoginPage() throws IOException, WriteException {
+        UserSetting userSetting = UserSetting.findByUser(UserApp.currentUser().id);
+        userSetting.loginDefaultPage = request().getQueryString("path");
+        userSetting.save();
+
+        ObjectNode json = Json.newObject();
+        json.put("defaultLoginPage", userSetting.loginDefaultPage);
+        return ok(json);
+    }
+
+    public static Result usermenuTabContentList(){
+        return ok(views.html.common.usermenu_tab_content_list.render());
     }
 }

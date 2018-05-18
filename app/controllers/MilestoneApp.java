@@ -23,6 +23,7 @@ package controllers;
 import controllers.annotation.AnonymousCheck;
 import controllers.annotation.IsAllowed;
 import controllers.annotation.IsCreatable;
+import models.AbstractPosting;
 import models.Attachment;
 import models.Milestone;
 import models.Project;
@@ -72,7 +73,7 @@ public class MilestoneApp extends Controller {
                 mCondition.orderBy,
                 Direction.getValue(mCondition.orderDir));
 
-        return ok(list.render("title.milestoneList", milestones, project, mCondition));
+        return ok(list.render("milestone", milestones, project, mCondition));
     }
 
     /**
@@ -103,15 +104,10 @@ public class MilestoneApp extends Controller {
         } else {
             Milestone newMilestone = milestoneForm.get();
 
-            if (newMilestone.contents == null) {
-                return status(REQUEST_ENTITY_TOO_LARGE,
-                        ErrorViews.RequestTextEntityTooLarge.render());
-            }
-
             newMilestone.project = project;
             newMilestone.dueDate = JodaDateUtil.lastSecondOfDay(newMilestone.dueDate);
             Milestone.create(newMilestone);
-            Attachment.moveAll(UserApp.currentUser().asResource(), newMilestone.asResource());
+            AbstractPostingApp.attachUploadFilesToPost(newMilestone.asResource());
             return redirect(routes.MilestoneApp.milestone(userName, projectName, newMilestone.id));
         }
     }
@@ -139,7 +135,7 @@ public class MilestoneApp extends Controller {
         Milestone milestone = Milestone.findById(milestoneId);
 
         Form<Milestone> editForm = new Form<>(Milestone.class).fill(milestone);
-        return ok(edit.render("title.editMilestone", editForm, milestoneId, project));
+        return ok(edit.render("title.editMilestone", editForm, milestone, project));
     }
 
     /**
@@ -157,7 +153,7 @@ public class MilestoneApp extends Controller {
         }
         validateDueDate(milestoneForm);
         if (milestoneForm.hasErrors()) {
-            return ok(edit.render("title.editMilestone", milestoneForm, milestoneId, project));
+            return ok(edit.render("title.editMilestone", milestoneForm, original, project));
         } else {
             Milestone existingMilestone = Milestone.findById(milestoneId);
             Milestone milestone = milestoneForm.get();

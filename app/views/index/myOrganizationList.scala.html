@@ -1,34 +1,37 @@
 @**
-* Yobi, Project Hosting SW
+* Yona, 21st Century Project Hosting SW
 *
-* Copyright 2014 NAVER Corp.
-* http://yobi.io
-*
-* @author Changsung Kim
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+* Copyright Yona & Yobi Authors & NAVER Corp.
+* https://yona.io
 **@
-@(currentUser:models.User)
+@(currentUser:User)
 @import utils.TemplateHelper._
 
-<ul class="unstyled my-project-item">
-@defining(Organization.findOrganizationsByUserLoginId(UserApp.currentUser.loginId)) { organizations =>
-    @for(organization <- organizations){
-        <li class="my-list-item" data-item="my-item" data-value="@organization.name">
-            @if(hasOrganizationLogo(organization)){<img src="@urlToOrganizationLogo(organization)">}else{<span class="dummy-25px"> </span>}<a href="@routes.OrganizationApp.organization(organization.name)">
-                <span class="bold">@organization.name</span>
-            </a>
-        </li>
+@displayOrganizations(title:String, organizations:List[Organization], favoredOrganizations:List[Organization],  isActive:Boolean = false) = {
+    @if(organizations.isEmpty && favoredOrganizations.isEmpty) {
+        <div id="@title" class="no-result tab-pane user-ul @if(isActive) {active}">@Messages("title.no.results")</div>
+    } else {
+        <ul class="tab-pane user-ul @if(isActive) {active}" id="@title">
+            @for(organization <- favoredOrganizations) {
+                @if(favoredOrganizations.last.equals(organization)){
+                    @myOrganizationList_partial(organization, true, true)
+                } else {
+                    @myOrganizationList_partial(organization, true)
+                }
+            }
+            @for(organization <- organizations) {
+                @if(!favoredOrganizations.contains(organization)) {
+                    @myOrganizationList_partial(organization, false)
+                }
+            }
+        </ul>
     }
 }
-</ul>
+
+    <div class="search-result">
+        <div class="group">
+            <input class="search-input org-search" type="text" autocomplete="off" placeholder="@Messages("title.type.name")">
+            <span class="bar"></span>
+        </div>
+        @displayOrganizations("organizations", Organization.findOrganizationsByUserLoginId(UserApp.currentUser.loginId), currentUser.getFavoriteOrganizations)
+    </div>

@@ -1,23 +1,9 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2012 NAVER Corp.
- * http://yobi.io
- *
- * @author Yi EungJun
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+ * https://yona.io
+ **/
 package utils;
 
 import models.*;
@@ -26,6 +12,8 @@ import models.enumeration.ResourceType;
 import models.resource.GlobalResource;
 import models.resource.Resource;
 import org.apache.commons.lang.BooleanUtils;
+
+import java.util.Optional;
 
 import static models.OrganizationUser.isAdmin;
 import static models.OrganizationUser.isMember;
@@ -67,7 +55,7 @@ public class AccessControl {
         // Site manager, Group admin, Project members can create anything.
         if (user.isSiteManager()
             || OrganizationUser.isAdmin(project.organization, user)
-            || user.isMemberOf(project)
+            || ProjectUser.isMember(user.id, project.id)
             || isAllowedIfGroupMember(project, user)) {
             return true;
         }
@@ -114,7 +102,8 @@ public class AccessControl {
             return false;
         }
 
-        if (isAllowedIfAuthor(user, container) || isAllowedIfAssignee(user, container)) {
+        if (isAllowedIfAuthor(user, container) || isAllowedIfAssignee(user, container)
+                || isAllowedIfSharer(user, container)) {
             return true;
         }
 
@@ -161,7 +150,7 @@ public class AccessControl {
                 if (project == null) {
                     return false;
                 }
-                return project.isPublic()
+                return project.isPublic() && !user.isGuest
                         || user.isMemberOf(project)
                         || isAdmin(project.organization, user)
                         || isAllowedIfGroupMember(project, user);
@@ -254,8 +243,7 @@ public class AccessControl {
 
         if (user.isManagerOf(project)
                 || isAllowedIfAuthor(user, resource)
-                || isAllowedIfAssignee(user, resource)
-                || isAllowedIfGroupMember(project, user)) {
+                || isAllowedIfAssignee(user, resource)) {
             return true;
         }
 
@@ -267,7 +255,8 @@ public class AccessControl {
             case ATTACHMENT:
                 switch (operation) {
                     case READ:
-                        return isAllowed(user, resource.getContainer(), Operation.READ);
+                        return isAllowed(user, resource.getContainer(), Operation.READ)
+                                || isAllowedIfSharer(user, resource.getContainer());
                     case UPDATE:
                     case DELETE:
                         return isAllowed(user, resource.getContainer(), Operation.UPDATE);
@@ -284,8 +273,9 @@ public class AccessControl {
         // See docs/technical/access-control.md for more information.
         switch(operation) {
         case READ:
-            return project.isPublic()
+            return project.isPublic() && !user.isGuest
                     || user.isMemberOf(project)
+                    || isAllowedIfSharer(user, resource)
                     || isAllowedIfGroupMember(project, user);
         case UPDATE:
             return user.isMemberOf(project)
@@ -294,8 +284,7 @@ public class AccessControl {
             if (resource.getType() == ResourceType.CODE) {
                 return false;
             }
-            return user.isMemberOf(project)
-                    || isAllowedIfGroupMember(project, user);
+            return user.isMemberOf(project);
         case ACCEPT:
         case CLOSE:
         case REOPEN:
@@ -373,6 +362,24 @@ public class AccessControl {
             return resource.isAuthoredBy(user);
         default:
             return false;
+        }
+    }
+
+    private static boolean isAllowedIfSharer(User user, Resource resource) {
+        switch (resource.getType()) {
+            case ISSUE_POST:
+                Issue issue = Issue.finder.byId(Long.valueOf(resource.getId()));
+                if (issue != null && issue.parent != null) {
+                    if (Optional.ofNullable(issue.parent.findSharerByUserId(user.id)).isPresent()) {
+                        return true;
+                    }
+                }
+                return issue != null && Optional.ofNullable(issue.findSharerByUserId(user.id)).isPresent();
+            case ISSUE_COMMENT:
+                IssueComment issueComment = IssueComment.find.byId(Long.valueOf(resource.getId()));
+                return issueComment != null && isAllowedIfSharer(user, issueComment.issue.asResource());
+            default:
+                return false;
         }
     }
 

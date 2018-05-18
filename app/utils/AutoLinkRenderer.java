@@ -62,7 +62,7 @@ import java.util.regex.Pattern;
  * </pre>
  */
 public class AutoLinkRenderer {
-    private static final String PATH_PATTERN_STR = "[a-zA-Z0-9-_./]+";
+    private static final String PATH_PATTERN_STR = "[a-zA-Z0-9-_.가-힣/]+";
     private static final String ISSUE_PATTERN_STR = "\\d+";
     private static final String SHA_PATTERN_STR = "[a-f0-9]{7,40}";
 
@@ -124,7 +124,7 @@ public class AutoLinkRenderer {
         this.project = project;
     }
 
-    public String render() {
+    public String render(String lang) {
         this.parse(PATH_WITH_ISSUE_PATTERN, new ToLink() {
             @Override
             public Link toLink(Matcher matcher) {
@@ -171,7 +171,7 @@ public class AutoLinkRenderer {
                 if (slashIndex > -1) {
                     return toValidProjectLink(path.substring(0, slashIndex), path.substring(slashIndex + 1));
                 } else {
-                    return toValidUserLink(path);
+                    return toValidUserLink(path, lang);
                 }
             }
         });
@@ -313,7 +313,7 @@ public class AutoLinkRenderer {
         return Link.EMPTY_LINK;
     }
 
-    private static Link toValidUserLink(String userId) {
+    private static Link toValidUserLink(String userId, String lang) {
         User user = User.findByLoginId(userId);
         Organization org = Organization.findByName(userId);
 
@@ -328,9 +328,17 @@ public class AutoLinkRenderer {
             if( user.avatarUrl().equals(UserApp.DEFAULT_AVATAR_URL) ){
                 avatarImage = "";
             } else {
-                avatarImage = "<img src='" + user.avatarUrl() + "' class='avatar-wrap smaller no-margin-no-padding vertical-top' alt='@" + user.loginId + "'> ";
+                avatarImage = "<img src='" + user.avatarUrl() + "' class='avatar-wrap smaller no-margin-no-padding vertical-top' alt='@" + user.name + " " + user.loginId + "'> ";
             }
-            return new Link(RouteUtil.getUrl(user), "no-text-decoration", "<span data-toggle='popover' data-placement='top' data-trigger='hover' data-html='true' data-content=\"" + StringEscapeUtils.escapeHtml4(avatarImage + user.name) + "\">@" + user.loginId + "</span>");
+
+            String userName = null;
+            if( StringUtils.isBlank(lang)) {
+                userName = user.getPureNameOnly();
+            } else {
+                userName = user.getPureNameOnly(lang);
+            }
+
+            return new Link(RouteUtil.getUrl(user), "no-text-decoration", "<span data-toggle='popover' data-placement='top' data-trigger='hover' data-html='true' data-content=\"" + StringEscapeUtils.escapeHtml4(avatarImage + user.name + " " + user.loginId) + "\">@" + userName + "</span>");
         }
     }
 

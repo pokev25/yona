@@ -1,24 +1,11 @@
 @**
-* Yobi, Project Hosting SW
+* Yona, 21st Century Project Hosting SW
 *
-* Copyright 2013 NAVER Corp.
-* http://yobi.io
-*
-* @author Jihan Kim
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+* Copyright Yona & Yobi Authors & NAVER Corp.
+* https://yona.io
 **@
-@(title:String, newProjectForm: play.data.Form[Project], orgUserList:List[OrganizationUser])
+@import play.data.Form
+@(title:String, newProjectForm: Form[Project], orgUserList:List[OrganizationUser])
 
 @import utils.TemplateHelper._
 @import playRepository.RepositoryService
@@ -122,7 +109,7 @@
                 </li>
 
                 <li class="mt10">
-                  <input type="radio" id="private" name="projectScope" value="PRIVATE" class="radio-btn pull-left" @if(newProjectForm.field("projectScope").value == "PRIVATE"){ checked="checked" }>
+                  <input type="radio" id="private" name="projectScope" value="PRIVATE" class="radio-btn pull-left" @if(newProjectForm.field("projectScope").value == "PRIVATE" || Application.PRIVATE_IS_DEFAULT.equalsIgnoreCase("private")){ checked="checked" }>
                   <label for="private">
                     <strong class="ml5">@Messages("project.private")</strong>
                     <p class="note">
@@ -171,27 +158,27 @@
             </div>
             <div class="span10">
                 <label for="menuSettingCode" class="bg-radiobtn label-public inline-list">
-                  <input type="checkbox" class="radio-btn" id="menuSettingCode" name="code" value="true" checked="checked">
+                  <input type="checkbox" class="radio-btn" id="menuSettingCode" name="code" @if(containsInDefaultMenus("code")){value="true" checked} >
                   @Messages("menu.code")
                 </label>
                 <label for="menuSettingIssue" class="bg-radiobtn label-public inline-list">
-                  <input type="checkbox" class="radio-btn" id="menuSettingIssue" name="issue" value="true" checked="checked">
+                  <input type="checkbox" class="radio-btn" id="menuSettingIssue" name="issue" @if(containsInDefaultMenus("issue")){value="true" checked} >
                   @Messages("menu.issue")
                 </label>
                 <label for="menuSettingPullRequest" class="bg-radiobtn label-public inline-list">
-                  <input type="checkbox" class="radio-btn" id="menuSettingPullRequest" name="pullRequest" value="true" checked="checked">
+                  <input type="checkbox" class="radio-btn" id="menuSettingPullRequest" name="pullRequest" @if(containsInDefaultMenus("pullRequest")){value="true" checked} >
                   @Messages("menu.pullRequest")
                 </label>
                 <label for="menuSettingReview" class="bg-radiobtn label-public inline-list">
-                  <input type="checkbox" class="radio-btn" id="menuSettingReview" name="review" value="true" checked="checked">
+                  <input type="checkbox" class="radio-btn" id="menuSettingReview" name="review" @if(containsInDefaultMenus("review")){value="true" checked} >
                   @Messages("menu.review")
                 </label>
                 <label for="menuSettingMilestone" class="bg-radiobtn label-public inline-list">
-                  <input type="checkbox" class="radio-btn" id="menuSettingMilestone" name="milestone" value="true" checked="checked">
+                  <input type="checkbox" class="radio-btn" id="menuSettingMilestone" name="milestone" @if(containsInDefaultMenus("milestone")){value="true" checked} >
                   @Messages("milestone")
                 </label>
                 <label for="menuSettingBoard" class="bg-radiobtn label-public inline-list">
-                  <input type="checkbox" class="radio-btn" id="menuSettingBoard" name="board" value="true" checked="checked">
+                  <input type="checkbox" class="radio-btn" id="menuSettingBoard" name="board" @if(containsInDefaultMenus("board")){value="true" checked} >
                   @Messages("menu.board")
                 </label>
             </div>

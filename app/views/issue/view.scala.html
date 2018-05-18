@@ -1,53 +1,40 @@
 @**
-* Yobi, Project Hosting SW
+* Yona, 21st Century Project Hosting SW
 *
-* Copyright 2012 NAVER Corp.
-* http://yobi.io
-*
-* @author Ahn Hyeok Jun
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+* Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+* https://yona.io
 **@
 @(title:String, issue:Issue, issueForm: play.data.Form[Issue], commentForm: play.data.Form[Comment],project:Project)
+@import scala.collection.mutable.ArrayBuffer
 @import org.apache.commons.lang.StringUtils
-@import helper._
-@import scala.collection.mutable.Map
 @import models.enumeration.ResourceType
 @import models.enumeration.Operation
 @import models.Milestone
-@import java.net._
-@import java.text.SimpleDateFormat
-@import java.security.MessageDigest
 @import utils.JodaDateUtil
 @import utils.TemplateHelper._
 @import utils.AccessControl._
-@import utils.Config
 @import play.libs.Json.toJson
 @import utils.Markdown
+@import models.enumeration.State
+@import controllers.api.IssueApi
 
-@getTitle(issue:Issue) = @{ "#" + issue.getNumber + " " + issue.title }
+@getTitle(issue:Issue) = @{ issue.title }
 
 @isFirstState(state:State) = {@if(issue.state.state == Issue.availableStates.get(0).state()){dirty}}
 
 @urlToIssues = @{
   requestHeader.headers.get("Referer") match {
-    case Some(u) => urlToList(u, routes.IssueApp.issues(project.owner, project.name, "open").toString())
+    case Some(u) => urlToList(u, routes.IssueApp.issues(project.owner, project.name, issue.state.state()).toString())
     case _ => routes.IssueApp.issues(project.owner, project.name, "open").toString()
   }
 }
 
+@isVotedByCurrentUser = @{
+    issue.isVotedBy(UserApp.currentUser)
+}
+
 @urlToVote = @{
-    if(issue.isVotedBy(UserApp.currentUser)){
+    if(isVotedByCurrentUser){
         routes.VoteApp.unvote(project.owner, project.name, issue.getNumber).toString
     } else {
         routes.VoteApp.vote(project.owner, project.name, issue.getNumber).toString
@@ -55,14 +42,58 @@
 }
 
 @getVoteButtonTitle = {
-    @if(issue.isVotedBy(UserApp.currentUser)){
+    @if(isVotedByCurrentUser){
         @Messages("issue.unvote.description")
     } else {
         @Messages("issue.vote.description")
     }
 }
 
-@projectLayout(getTitle(issue), project, utils.MenuType.ISSUE){
+@titleForOGTag = @{getTitle(issue) + " |:| " + issue.body.substring(0, Math.min(issue.body.length, 200))}
+
+@parentIssueId = @{
+    if(issue.parent != null){
+        issue.parent.id
+    } else {
+        issue.id
+    }
+}
+
+@hasAssignee = @{
+    issue.assigneeName != null
+}
+
+@hasSharer = @{
+    issue.sharers.size > 0
+}
+
+@sharers = @{
+    var sharerIds = ArrayBuffer[String]()
+    for( sharedUser <- issue.sharers ) {
+        sharerIds += sharedUser.loginId
+    }
+    sharerIds.mkString(",")
+}
+
+@VOTER_AVATAR_SHOW_LIMIT = @{ 5 }
+
+@conatinsCurrentUserInWatchers = @{Watch.isWatching(UserApp.currentUser(), issue.asResource())}
+
+@isThisParentIssue() = @{
+    issue.parent == null
+}
+
+@amIShared() = @{
+    var found = false
+    for(sharer <- issue.sharers) {
+        if(sharer.user.id.equals(UserApp.currentUser().id)) {
+            found = true
+        }
+    }
+    found
+}
+
+@projectLayout(titleForOGTag, project, utils.MenuType.ISSUE){
 @projectMenu(project, utils.MenuType.ISSUE, "main-menu-only")
 <div class="page-wrap-outer">
     <div class="project-page-wrap board-view">
@@ -75,6 +106,9 @@
                 <span class="badge badge-issue-@issue.state.state.toLowerCase">@Messages("issue.state." + issue.state.state)</span>
             </div>
             <div class="title">
+                @if(issue.parent != null) {
+                    <span class="subtask-mark">subtask</span>
+                }
                 <strong class="board-id">#@issue.getNumber</strong> @issue.title
                 <div class="pull-right hide show-in-mobile" style="font-size: 0.7em">
                     <span class="date" title="@JodaDateUtil.getDateString(issue.createdDate)">
@@ -91,15 +125,27 @@
                 <div class="author-info">
                         <a href="@userInfo(issue.authorLoginId)" class="usf-group">
                             <span class="avatar-wrap smaller">
-                                <img src="@User.findByLoginId(issue.authorLoginId).avatarUrl" width="20" height="20">
+                                <img src="@User.findByLoginId(issue.authorLoginId).avatarUrl(32)" width="20" height="20">
                             </span>
                             @if(issue.authorLoginId != null){
-                                <strong class="name">@issue.authorName</strong>
+                                <strong class="name">@issue.getAuthor.getDisplayName</strong>
                                 <span class="loginid"> <strong>@{"@"}</strong>@issue.authorLoginId</span>
                             } else {
                                 <strong class="name">@Messages("issue.noAuthor")</strong>
                             }
                         </a>
+                    @if(StringUtils.isNotEmpty(issue.history)){
+                        @if(UserApp.currentUser().isAnonymous){
+                            <div class="posting-history">
+                                <a href="@routes.UserApp.loginForm()?redirectUrl=@routes.IssueApp.issue(project.owner, project.name, issue.getNumber)" data-toggle="modal">@Messages("change.history")</a>
+                            </div>
+                        } else {
+                            <div class="posting-history">
+                                <a href="#-yona-posting-history" data-toggle="modal">@Messages("change.history")</a>
+                                @common.partial_history(issue)
+                            </div>
+                        }
+                    }
                 </div>
 
                 @if(StringUtils.isEmpty(issue.body)){
@@ -112,56 +158,90 @@
                     <div class="pull-left">
                         <div>
                             @if(isAllowed(UserApp.currentUser(), issue.asResource(), Operation.WATCH)) {
-                                <button id="watch-button" type="button" class="ybtn @if(issue.getWatchers(false).contains(UserApp.currentUser())) {ybtn-watching}"
-                                        data-toggle="button" data-watching="@if(issue.getWatchers(false).contains(UserApp.currentUser())){true}else{false}">
-                                @if(issue.getWatchers(false).contains(UserApp.currentUser())) {
+                                <button id="watch-button" type="button" class="ybtn @if(conatinsCurrentUserInWatchers) {ybtn-watching}"
+                                        data-toggle="tooltip" data-placement="top" title="@Messages("issue.watch.description")" data-watching="@conatinsCurrentUserInWatchers">
+                                @if(conatinsCurrentUserInWatchers) {
                                     @Messages("issue.unwatch")
                                 } else {
                                     @Messages("issue.watch")
                                 }
                                 </button>
                             }
+                            @if(isAllowed(UserApp.currentUser(), issue.asResource(), Operation.UPDATE) && !hasSharer) {
+                                <button id="issue-share-button" type="button" class="ybtn" data-toggle="popover" data-trigger="hover" data-placement="top" data-content="@Messages("issue.sharer.description")">@Messages("button.share.issue")</button>
+                            }
 
-                            <div id="vote" class="vote-wrap">
-                                @if(isResourceCreatable(UserApp.currentUser, issue.asResource(), ResourceType.ISSUE_COMMENT)) {
-                                    <a href="@urlToVote" class="ybtn @if(issue.isVotedBy(UserApp.currentUser)){ybtn-watching}" title="@getVoteButtonTitle"
-                                       data-request-method="post" data-toggle="tooltip">
-                                        <span class="heart"><i class="yobicon-hearts"></i></span>
-                                        <span class="desc">@Messages("issue.vote")</span>
-                                        @if(issue.voters.size > 0) {
-                                            <strong class="count">@issue.voters.size</strong>
-                                        }
-                                    </a>
-                                } else {
-                                    <span class="ybtn ybtn-disabled" style="color:#777;" data-toggle="tooltip" title="@Messages("user.login.alert")" data-login="required">
-                                        <span class="heart"><i class="yobicon-hearts"></i></span>
-                                        <span class="desc">@Messages("issue.vote")</span>
-                                        @if(issue.voters.size > 0) {
-                                            <strong class="count">@issue.voters.size</strong>
-                                        }
-                                    </span>
-                                }
-
-                                @if(issue.voters.size > 0){
-                                    @partial_voters(issue, 3)
-                                }
-                            </div>
                         </div>
                     </div>
+                    <div id="vote" class="vote-wrap @if(issue.voters.size > 0){voter-exists}">
+                        @if(isResourceCreatable(UserApp.currentUser, issue.asResource(), ResourceType.ISSUE_COMMENT)) {
+                            <a href="@urlToVote" class="@if(issue.isVotedBy(UserApp.currentUser)) {ybtn-watching}" title="@getVoteButtonTitle"
+                            data-request-method="post" data-toggle="tooltip">
+                                <span class="heart"><i class="yobicon-hearts"></i></span>
+                            </a>
+                        } else {
+                            <span class="ybtn-disabled" style="color: #777;" data-toggle="tooltip" title="@Messages("user.login.alert")" data-login="required">
+                                <span class="heart"><i class="yobicon-hearts"></i></span>
+                            </span>
+                        }
 
+                        @if(issue.voters.size > 0) {
+                            @partial_voters(issue, 3)
+                        }
+                    </div>
+
+                    @if(issue.voters.size > 0) {
+                        @partial_voter_list("voters", issue.voters)
+                    }
+
+                    @if(StringUtils.isNotBlank(IssueApi.TRANSLATION_API)){
+                        <button type="button" id="translate" class="icon btn-transparent-with-fontsize-lineheight ml10"  data-toggle="tooltip" title="@Messages("button.translation")"><i class="yobicon-lang"></i></button>
+                    }
+
+                    <span class="act-row">
+                    @if(isAllowed(UserApp.currentUser(), issue.asResource(), Operation.UPDATE)) {
+                        <button type="button" class="icon btn-transparent-with-fontsize-lineheight ml10 pt5px" data-toggle="tooltip" title="@Messages("button.edit")" onclick="window.location='@routes.IssueApp.editIssueForm(project.owner, project.name, issue.getNumber)'"><i class="yobicon-edit-2"></i></button>
+                    } else {
+                        <a href="@routes.IssueApp.editIssueForm(project.owner, project.name, issue.getNumber)"><button type="button" class="icon btn-transparent-with-fontsize-lineheight ml10 pt5px" data-toggle="tooltip" title="@Messages("button.show.original")"><i class="yobicon-edit-2"></i></button></a>
+                    }
                     @if(issue.canBeDeleted) {
                         @if(isAllowed(UserApp.currentUser(), issue.asResource(), Operation.DELETE)) {
-                            <a href="#deleteConfirm" data-toggle="modal" class="ybtn ybtn-danger">@Messages("button.delete")</a>
+                            <a href="#deleteConfirm" data-toggle="modal">
+                                <button type="button" class="icon btn-transparent-with-fontsize-lineheight ml6" data-toggle='tooltip' title="@Messages("button.delete")"><i class="yobicon-trash"></i></button></a>
                         }
                     } else {
-                        <button class="ybtn ybtn-disabled" data-toggle="tooltip" data-placement="top" title="@Messages("issue.can.not.be.deleted")">@Messages("button.delete")</button>
+                        <button type="button" class="icon disabled btn-transparent-with-fontsize-lineheight ml6" data-toggle='popover' data-trigger="hover" data-placement="top" data-content="@Messages("issue.can.not.be.deleted")"><i class="yobicon-trash"></i></button>
                     }
-
-                    @if(isAllowed(UserApp.currentUser(), issue.asResource(), Operation.UPDATE)) {
-                        <a href="@routes.IssueApp.editIssueForm(project.owner, project.name, issue.getNumber)" class="ybtn">@Messages("button.edit")</a>
-                    }
+                    </span>
                 </div>
-
+                <dl class="sharer-list @if(!hasSharer){hideFromDisplayOnly}">
+                    <dt class="issue-share-title mb10">
+                        @Messages("issue.sharer") <span class="num issue-sharer-count">@if(issue.sharers.size > 0) { @issue.sharers.size }</span>
+                    </dt>
+                    <dd id="sharer-list" class="@if(!hasSharer){hideFromDisplayOnly}">
+                    @if(isAllowed(UserApp.currentUser(), issue.asResource(), Operation.UPDATE)) {
+                        <input type="hidden" class="bigdrop width100p" id="issueSharer" name="issueSharer" placeholder="@Messages("issue.sharer.select")" value="@sharers" title="">
+                    } else {
+                        @for(sharer <- issue.getSortedSharer){
+                            <div class="text-ellipsis sharer-item">
+                                <a href="@userInfo(sharer.loginId)" class="usf-group">
+                                    <strong class="name">@sharer.user.getDisplayName</strong>
+                                </a>
+                            </div>
+                        }
+                    }
+                    </dd>
+                </dl>
+                <div class="watcher-list"></div>
+                <div class="subtasks">
+                @if(amIShared) {
+                    @if(isThisParentIssue) {
+                        @partial_view_childIssueList(issue, project)
+                    }
+                } else {
+                    @partial_view_childIssueList(issue, project)
+                }
+                </div>
                 @** Comment **@
                 <div id="comments" class="board-comment-wrap">
                     <div id="timeline">
@@ -181,26 +261,29 @@
 
                         @**<!-- assignee  -->**@
                         <dl>
+                            @if(project.menuSetting.issue) {
+                                <dd class="project-btn-item">
+                                    <a href="@routes.IssueApp.newIssueForm(project.owner, project.name)?parentIssueId=@parentIssueId" class="ybtn ybtn-success">@Messages("button.newSubtask")</a>
+                                </dd>
+                            }
                             <dt>@Messages("issue.assignee")</dt>
 
                             <dd>
-                            @defining(issue.assigneeName != null) { isAssigned =>
-                                @if(isAllowed(UserApp.currentUser(), issue.asResource(), Operation.UPDATE)) {
-                                    @partial_assignee(project, issue)
+                            @if(isAllowed(UserApp.currentUser(), issue.asResource(), Operation.UPDATE)) {
+                                @partial_assignee(project, issue)
+                            } else {
+                                @if(hasAssignee){
+                                <a href="@userInfo(issue.assignee.user.loginId)" class="usf-group">
+                                    <span class="avatar-wrap smaller">
+                                        <img src="@User.findByLoginId(issue.assignee.user.loginId).avatarUrl" width="20" height="20">
+                                    </span>
+                                    <strong class="name">@issue.assignee.user.getDisplayName</strong>
+                                    <span class="loginid"> <strong>@{"@"}</strong>@issue.assignee.user.loginId</span>
+                                </a>
                                 } else {
-                                    @if(isAssigned){
-                                    <a href="@userInfo(issue.assignee.user.loginId)" class="usf-group">
-                                        <span class="avatar-wrap smaller">
-                                            <img src="@User.findByLoginId(issue.assignee.user.loginId).avatarUrl" width="20" height="20">
-                                        </span>
-                                        <strong class="name">@issue.assigneeName</strong>
-                                        <span class="loginid"> <strong>@{"@"}</strong>@issue.assignee.user.loginId</span>
-                                    </a>
-                                    } else {
-                                    <div>
-                                       @Messages("issue.noAssignee")
-                                    </div>
-                                    }
+                                <div>
+                                   @Messages("issue.noAssignee")
+                                </div>
                                 }
                             }
                             </dd>
@@ -266,7 +349,7 @@
                             <dt>
                                 @Messages("issue.dueDate")
                                 <span class="duedate-status @if(issue.isOverDueDate) {overdue}">
-                                @if(issue.dueDate != null) {
+                                @if(issue.dueDate != null && issue.isOpen) {
                                     @if(issue.isOverDueDate) {
                                         (@Messages("issue.dueDate.overdue"))
                                     } else {
@@ -294,11 +377,26 @@
                         @**<!-- labels -->**@
                         @if(!IssueLabel.findByProject(project).isEmpty){
                             @if(isAllowed(UserApp.currentUser(), issue.asResource(), Operation.UPDATE)){
-                                @partial_select_label(IssueLabel.findByProject(project), issue.getLabelIds)
+                                @partial_select_label(IssueLabel.findByProject(project), issue.getLabelIds, "", "", project)
                             } else {
                                 @partial_show_selected_label(issue.labels.toList, routes.IssueApp.issues(project.owner, project.name, issue.state.state(), "html", 1).toString)
                             }
                         }
+                        <div class="act-row right-menu-icons">
+                            @if(isAllowed(UserApp.currentUser(), issue.asResource(), Operation.UPDATE)) {
+                                <button type="button" class="icon btn-transparent-with-fontsize-lineheight ml10 pt5px" data-toggle="tooltip" title="@Messages("button.edit")" onclick="window.location='@routes.IssueApp.editIssueForm(project.owner, project.name, issue.getNumber)'"><i class="yobicon-edit-2"></i></button>
+                            } else {
+                                <a href="@routes.IssueApp.editIssueForm(project.owner, project.name, issue.getNumber)"><button type="button" class="icon btn-transparent-with-fontsize-lineheight ml10 pt5px" data-toggle="tooltip" title="@Messages("button.show.original")"><i class="yobicon-edit-2"></i></button></a>
+                            }
+                            @if(issue.canBeDeleted) {
+                                @if(isAllowed(UserApp.currentUser(), issue.asResource(), Operation.DELETE)) {
+                                    <a href="#deleteConfirm" data-toggle="modal">
+                                        <button type="button" class="icon btn-transparent-with-fontsize-lineheight ml6" data-toggle='tooltip' title="@Messages("button.delete")"><i class="yobicon-trash"></i></button></a>
+                                }
+                            } else {
+                                <button type="button" class="icon disabled btn-transparent-with-fontsize-lineheight ml6" data-toggle='popover' data-trigger="hover" data-placement="top" data-content="@Messages("issue.can.not.be.deleted")"><i class="yobicon-trash"></i></button>
+                            }
+                        </div>
                         @**<!-- // -->**@
                     </form>
                 </div>
@@ -307,7 +405,6 @@
 
 
         <div class="board-footer">
-            <a href="@urlToIssues" class="ybtn pull-left" data-button="historyBack">@Messages("button.list")</a>
             @help.keymap("issueDetail", project)
         </div>
     </div>
@@ -342,6 +439,8 @@
 <link rel="stylesheet" type="text/css" media="screen" href="@routes.Assets.at("javascripts/lib/atjs/jquery.atwho.css")">
 <script type="text/javascript" src="@routes.Assets.at("javascripts/lib/atjs/jquery.caret.min.js")"></script>
 <script type="text/javascript" src="@routes.Assets.at("javascripts/lib/atjs/jquery.atwho.js")"></script>
+<script type="text/javascript" src="@routes.Assets.at("javascripts/service/yona.issue.Assginee.js")"></script>
+<script type="text/javascript" src="@routes.Assets.at("javascripts/service/yona.issue.Sharer.js")"></script>
 <script type="text/javascript">
     $(function(){
         // yobi.issue.View
@@ -375,7 +474,83 @@
         });
 
         // detect comment which contains mention at me
-        $(".comment-body:contains('@UserApp.currentUser().loginId')").closest(".comment").addClass("mentioned");
+        $(".comment-body:contains('@UserApp.currentUser().getPureNameOnly')").closest(".comment").addClass("mentioned");
     });
+</script>
+<script>
+        $(function () {
+            yonaAssgineeModule(
+                    "@api.routes.IssueApi.findAssignableUsers(project.owner, project.name, issue.getNumber)",
+                    "@api.routes.IssueApi.updateAssginees(project.owner, project.name, issue.getNumber)",
+                    "@Messages("issue.assignee")"
+            );
+
+            yonaIssueSharerModule(
+                    "@api.routes.IssueApi.findSharerByloginIds(project.owner, project.name, issue.getNumber)",
+                    "@api.routes.IssueApi.findSharableUsers(project.owner, project.name, issue.getNumber)",
+                    "@api.routes.IssueApi.updateSharer(project.owner, project.name, issue.getNumber)",
+                    "@Messages("issue.sharer")"
+            );
+
+            $('#issue-share-button').on('click', function () {
+                $('#sharer-list').show();
+                $('.sharer-list').show().addClass("sharer-list-border");
+            });
+
+            $('#translate').one('click', function (e) {
+                var data = {
+                    owner: "@project.owner",
+                    projectName: "@project.name",
+                    type: "issue",
+                    number: "@issue.getNumber"
+                };
+                $.ajax({
+                    url: "/-_-api/v1/translation",
+                    data: JSON.stringify(data),
+                    type: "POST",
+                    dataType: "json",
+                    contentType: "application/json"
+                }).done(function (data) {
+                    $(".markdown-wrap").first().html(data.translated);
+                    $(this).attr("disabled", true);
+                });
+            });
+
+            $('.comment-translate').one('click', function (e) {
+                var payload = {
+                    owner: "@project.owner",
+                    projectName: "@project.name",
+                    type: "issue-comment",
+                    number: $(this).data("commentId")
+                };
+                $.ajax({
+                    url: "/-_-api/v1/translation",
+                    data: JSON.stringify(payload),
+                    type: "POST",
+                    dataType: "json",
+                    contentType: "application/json"
+                }).done(function (data) {
+                    $("#comment-body-" + payload.number).find(".markdown-wrap").html(data.translated)
+                    $(this).attr("disabled", true);
+                });
+            });
+
+            if (Clipboard.isSupported()) {
+                var clipboard = new Clipboard('#copyEmailBtn');
+
+                clipboard.on('success', function(e) {
+                    $yobi.alert('@Messages("button.copy.email.success.message")');
+                });
+            } else {
+                $yobi.notify('@Messages("site.features.error.clipboard")', 1500);
+            }
+
+            // timeline label text color adjusting
+            $(".event > .label").each(function() {
+                var $this = $(this);
+                $this.removeClass("dimgray white")
+                        .addClass($yobi.getContrastColor($this.css('background-color')))
+            });
+        });
 </script>
 }

@@ -20,6 +20,11 @@
  */
 package models;
 
+import com.avaje.ebean.Expr;
+import com.avaje.ebean.Page;
+import com.avaje.ebean.PagingList;
+import controllers.Application;
+import controllers.UserApp;
 import models.enumeration.RequestState;
 import models.enumeration.ResourceType;
 import models.resource.GlobalResource;
@@ -50,7 +55,7 @@ public class Organization extends Model implements ResourceConvertible {
 
     @Constraints.Pattern(value = "^" + User.LOGIN_ID_PATTERN + "$", message = "user.wrongloginId.alert")
     @Constraints.Required
-    @Constraints.ValidateWith(ReservedWordsValidator.class)
+    @Constraints.ValidateWith(value = ReservedWordsValidator.class, message = "validation.reservedWord")
     public String name;
 
     @Formats.DateTime(pattern = "yyyy-MM-dd")
@@ -73,6 +78,13 @@ public class Organization extends Model implements ResourceConvertible {
 
     public static Organization findByName(String name) {
         return find.where().ieq("name", name).findUnique();
+    }
+
+    public static PagingList<Organization> findByNameLike(String name) {
+        return find.where().or(
+                Expr.like("name", "%" + name + "%"),
+                Expr.like("descr", "%" + name + "%")
+        ).orderBy("id desc").findPagingList(30);
     }
 
     public static boolean isNameExist(String name) {
@@ -103,7 +115,7 @@ public class Organization extends Model implements ResourceConvertible {
 
     public List<Project> getVisibleProjects(User user) {
         List<Project> result = new ArrayList<>();
-        if(OrganizationUser.isAdmin(this.id, user.id)) {
+        if(OrganizationUser.isAdmin(this.id, user.id) || user.isSiteManager()) {
             result.addAll(this.projects);
         } else if(OrganizationUser.isMember(this.id, user.id)) {
             for(Project project : this.projects) {
@@ -112,9 +124,11 @@ public class Organization extends Model implements ResourceConvertible {
                 }
             }
         } else {
-            for(Project project : this.projects) {
-                if(project.isPublic() || user.isMemberOf(project)) {
-                    result.add(project);
+            if(!Application.HIDE_PROJECT_LISTING){
+                for(Project project : this.projects) {
+                    if(project.isPublic() && !user.isGuest || user.isMemberOf(project)) {
+                        result.add(project);
+                    }
                 }
             }
         }

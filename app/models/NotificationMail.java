@@ -1,26 +1,13 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2013 NAVER Corp.
- * http://yobi.io
- *
- * @author Yi EungJun
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+ * https://yona.io
+ **/
 package models;
 
 import com.google.common.collect.Lists;
+import controllers.Application;
 import info.schleichardt.play2.mailplugin.Mailer;
 import notification.INotificationEvent;
 import mailbox.EmailAddressWithDetail;
@@ -32,6 +19,7 @@ import notification.MergedNotificationEvent;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.mail.HtmlEmail;
 import org.joda.time.DateTime;
 import org.jsoup.Jsoup;
@@ -46,6 +34,7 @@ import play.i18n.Messages;
 import play.libs.Akka;
 import scala.concurrent.duration.Duration;
 import utils.Config;
+import utils.HttpUtil;
 import utils.Markdown;
 import utils.Url;
 
@@ -394,6 +383,9 @@ public class NotificationMail extends Model {
         }
 
         receivers.remove(User.anonymous);
+        if(StringUtils.isNotBlank(Application.ALLOWED_SENDING_MAIL_DOMAINS)) {
+            receivers.removeAll(getUsersUsingNoAcceptableEmails(receivers));
+        }
 
         if(receivers.isEmpty()) {
             return;
@@ -426,6 +418,55 @@ public class NotificationMail extends Model {
                 sendMail(event, toList, bccList, langCode);
             }
         }
+    }
+
+    private static String getDomainFromEmail(String email) {
+        if (email == null) {
+            return null;
+        }
+
+        int lastIndex = email.lastIndexOf('@');
+
+        return (lastIndex < 0 || lastIndex + 1 >= email.length()) ? null : email.substring(lastIndex + 1);
+    }
+
+    private static Set<User> getUsersUsingNoAcceptableEmails(Set<User> users) {
+        List<String> acceptableDomains = new ArrayList<>();
+
+        if(StringUtils.isNotBlank(Application.ALLOWED_SENDING_MAIL_DOMAINS)){
+            for(String domain: Application.ALLOWED_SENDING_MAIL_DOMAINS.split(",")){
+                acceptableDomains.add(StringUtils.defaultString(domain, "").toLowerCase().trim());
+            }
+        }
+
+        Set<User> filteredUsers = new HashSet<>();
+
+        for (User user : users) {
+            String domain = getDomainFromEmail(user.email);
+            if (domain == null || !acceptableDomains.contains(domain.toLowerCase())) {
+                filteredUsers.add(user);
+            }
+        }
+
+        return filteredUsers;
+    }
+
+    public static boolean isAllowedEmailDomains(String email) {
+        List<String> acceptableDomains = new ArrayList<>();
+
+        if(StringUtils.isBlank(Application.ALLOWED_SENDING_MAIL_DOMAINS)){
+            return true;
+        } else {
+            for (String domain : Application.ALLOWED_SENDING_MAIL_DOMAINS.split(",")) {
+                acceptableDomains.add(StringUtils.defaultString(domain, "").toLowerCase().trim());
+            }
+        }
+
+        String domain = getDomainFromEmail(email);
+        if(domain == null || !acceptableDomains.contains(domain.toLowerCase())) {
+            return false;
+        }
+        return true;
     }
 
     private static int getPartialRecipientSize(Set<User> receivers) {
@@ -492,8 +533,9 @@ public class NotificationMail extends Model {
             Lang lang = Lang.apply(langCode);
 
             String message = event.getMessage(lang);
+            String plainMessage = event.getPlainMessage(lang);
 
-            if (message == null) {
+            if (message == null || plainMessage == null) {
                 return;
             }
 
@@ -505,8 +547,15 @@ public class NotificationMail extends Model {
                 IssueComment issueComment = IssueComment.find.byId(Long.valueOf(resource.getId()));
                 resource = issueComment.issue.asResource();
             }
-            email.setHtmlMsg(getHtmlMessage(lang, message, urlToView, resource, acceptsReply));
-            email.setTextMsg(getPlainMessage(lang, message, Url.create(urlToView), acceptsReply));
+
+            // ToDo: needed to refactor
+            if (event.getType() == EventType.ISSUE_BODY_CHANGED ||
+                    event.getType() == EventType.POSTING_BODY_CHANGED) {
+                email.setHtmlMsg(removeHeadAnchor(getRenderedMail(lang, message, urlToView, resource, acceptsReply)));
+            } else {
+                email.setHtmlMsg(removeHeadAnchor(getHtmlMessage(lang, message, urlToView, resource, acceptsReply)));
+            }
+            email.setTextMsg(getPlainMessage(lang, plainMessage, Url.create(urlToView), acceptsReply));
 
             email.addReferences();
             email.setSentDate(event.getCreatedDate());
@@ -522,6 +571,10 @@ public class NotificationMail extends Model {
             Logger.warn("Failed to send a notification: "
                     + email + "\n" + ExceptionUtils.getStackTrace(e));
         }
+    }
+
+    private static String removeHeadAnchor(String htmlText) {
+        return htmlText.replaceAll("head-anchor\">#</a>", "\"></a>");
     }
 
     @Nullable
@@ -555,7 +608,7 @@ public class NotificationMail extends Model {
         if (detail != null) {
             EmailAddressWithDetail addr =
                     new EmailAddressWithDetail(Config.getEmailFromImap());
-            addr.setDetail(detail);
+            addr.setDetail(HttpUtil.getEncodeEachPathName(detail));
             return addr.toString();
         } else {
             return null;
@@ -564,8 +617,23 @@ public class NotificationMail extends Model {
 
     private static String getHtmlMessage(Lang lang, String message, String urlToView,
                                          Resource resource, boolean acceptsReply) {
+
+        String renderred = null;
+
+        if(resource != null) {
+            renderred = Markdown.render(message, resource.getProject(), lang.code());
+        } else {
+            renderred = Markdown.render(message);
+        }
+
+        return getRenderedMail(lang, renderred, urlToView, resource, acceptsReply);
+    }
+
+    private static String getRenderedMail(Lang lang, String message, String urlToView,
+                                          Resource resource, boolean acceptsReply) {
+
         String content = views.html.common.notificationMail.render(
-                lang, Markdown.render(message), urlToView, resource, acceptsReply).toString();
+                lang, message, urlToView, resource, acceptsReply).toString();
 
         Document doc = Jsoup.parse(content);
 
@@ -635,13 +703,7 @@ public class NotificationMail extends Model {
 
     private static String getPlainMessage(Lang lang, String message, String urlToView, boolean acceptsReply) {
         String msg = message;
-        String url = urlToView;
-        String messageKey = acceptsReply ?
-                "notification.replyOrLinkToView" : "notification.linkToView";
-
-        if (url != null) {
-            msg += String.format("\n\n--\n" + Messages.get(lang, messageKey, url));
-        }
+        msg += "\n\n Yona 에서 자세히 보거나 혹은 이 메일에 직접 회신하실 수도 있습니다.";
 
         return msg;
     }

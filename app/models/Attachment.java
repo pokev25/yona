@@ -1,31 +1,20 @@
 /**
- * Yobi, Project Hosting SW
+ * Yona, Project Hosting SW
  *
- * Copyright 2012 NAVER Corp.
- * http://yobi.io
- *
- * @author Yi EungJun
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2016 the original author or authors.
  */
 package models;
 
+import com.avaje.ebean.Page;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import controllers.AttachmentApp;
+import controllers.UserApp;
 import models.enumeration.ResourceType;
 import models.resource.GlobalResource;
 import models.resource.Resource;
 import models.resource.ResourceConvertible;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.tika.config.TikaConfig;
 import org.apache.tika.mime.MimeTypeException;
 import play.data.validation.Constraints;
@@ -71,7 +60,8 @@ public class Attachment extends Model implements ResourceConvertible {
     public Long size;
     public String containerId;
 
-    private Date createdDate;
+    public Date createdDate;
+    public String ownerLoginId;
 
     /**
      * Finds an attachment which matches the given one.
@@ -188,7 +178,7 @@ public class Attachment extends Model implements ResourceConvertible {
         List<Attachment> attachments = Attachment.find.where().idIn(Arrays.asList(selectedFileIds)).findList();
         for (Attachment attachment : attachments) {
             if(attachment.containerId.equals(from.getId())
-                    && attachment.containerType == from.getType()){
+                    && attachment.containerType == from.getType() || UserApp.currentUser().isSiteManager()){
                 attachment.moveTo(to);
             }
         }
@@ -213,7 +203,7 @@ public class Attachment extends Model implements ResourceConvertible {
      * PlayFramework to the Upload Directory managed by Yobi.
      *
      * @param file
-     * @return SHA1 hash of the file
+     * @return SHA-256 hash of the file
      * @throws NoSuchAlgorithmException
      * @throws IOException
      */
@@ -222,7 +212,7 @@ public class Attachment extends Model implements ResourceConvertible {
         // Compute sha1 checksum.
         InputStream is = new FileInputStream(file);
         byte buf[] = new byte[10240];
-        MessageDigest algorithm = MessageDigest.getInstance("SHA1");
+        MessageDigest algorithm = MessageDigest.getInstance("SHA-256");
         for (int readSize = 0; readSize >= 0; readSize = is.read(buf)) {
             algorithm.update(buf, 0, readSize);
         }
@@ -250,7 +240,7 @@ public class Attachment extends Model implements ResourceConvertible {
      * Attaches an uploaded file to the given container with the given name.
      *
      * Moves an uploaded file to the Upload Directory and rename the file to
-     * its SHA1 hash. And it stores the metadata of the file in this entity.
+     * its SHA-256 hash. And it stores the metadata of the file in this entity.
      *
      * If there is an entity that has the same values with this entity already,
      * it means the container has the same attachment. If that is the case,
@@ -279,12 +269,13 @@ public class Attachment extends Model implements ResourceConvertible {
      *
      * @return the file
      */
+    @JsonIgnore
     public File getFile() {
         return new File(getUploadDirectory(), this.hash);
     }
 
     public static File getUploadDirectory() {
-        return new File(utils.Config.getYobiHome(), uploadDirectory);
+        return new File(utils.Config.getYonaDataDir(), uploadDirectory);
     }
 
     /**
@@ -450,7 +441,7 @@ public class Attachment extends Model implements ResourceConvertible {
      */
     private static void cleanupTemporaryUploadFilesWithSchedule() {
         Akka.system().scheduler().schedule(
-                Duration.create(0, TimeUnit.SECONDS),
+                Duration.create(AttachmentApp.TEMPORARYFILES_KEEPUP_TIME_MILLIS, TimeUnit.MILLISECONDS),
                 Duration.create(AttachmentApp.TEMPORARYFILES_KEEPUP_TIME_MILLIS, TimeUnit.MILLISECONDS),
                 new Runnable() {
                     @Override
@@ -510,7 +501,7 @@ public class Attachment extends Model implements ResourceConvertible {
         byte buf[] = new byte[10240];
 
         // Compute hash and store the stream as a temp file
-        MessageDigest algorithm = MessageDigest.getInstance("SHA1");
+        MessageDigest algorithm = MessageDigest.getInstance("SHA-256");
         String tempFileHash;
         File tmpFile = File.createTempFile("yobi", null);
         FileOutputStream fos = new FileOutputStream(tmpFile);
@@ -530,6 +521,20 @@ public class Attachment extends Model implements ResourceConvertible {
         return save(moveFileIntoUploadDirectory(tmpFile, tempFileHash), fileName, container);
     }
 
+    public static Page<Attachment> findByUser(User user, int pageSize, int pageNo, String filter){
+        if (StringUtils.isEmpty(filter)) {
+            return Attachment.find.where()
+                    .eq("owner_login_id", user.loginId)
+                    .order("created_date desc")
+                    .findPagingList(pageSize).getPage(pageNo - 1);
+        } else {
+            return Attachment.find.where()
+                    .eq("owner_login_id", user.loginId)
+                    .ilike("name", "%" + filter + "%")
+                    .order("created_date desc")
+                    .findPagingList(pageSize).getPage(pageNo - 1);
+        }
+    }
     /**
      * Save this attachment with metadata from the given arguments.
      *
@@ -541,14 +546,15 @@ public class Attachment extends Model implements ResourceConvertible {
      */
     private boolean save(File file, String fileName, Resource container) throws
             IOException {
-        // Store the file as its SHA1 hash in filesystem, and record its
-        // metadata - containerType, containerId, createdDate, name, size, hash and
-        // mimeType - in Database.
+        // Store the file as its SHA-256 hash in filesystem, and record its
+        // metadata - containerType, containerId, createdDate, name, size, hash
+        // and mimeType - in Database.
         this.containerType = container.getType();
         this.containerId = container.getId();
         this.createdDate = JodaDateUtil.now();
         this.hash = file.getName();
         this.size = file.length();
+        this.ownerLoginId = UserApp.currentUser().loginId;
         if (this.mimeType == null) {
             this.mimeType = FileUtil.detectMediaType(file, name).toString();
         }
@@ -596,5 +602,4 @@ public class Attachment extends Model implements ResourceConvertible {
         }
         return uploads;
     }
-
 }

@@ -1,36 +1,46 @@
 @**
-* Yobi, Project Hosting SW
+* Yona, 21st Century Project Hosting SW
 *
-* Copyright 2012 NAVER Corp.
-* http://yobi.io
-*
-* @author Ahn Hyeok Jun
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+* Copyright Yona & Yobi Authors & NAVER Corp.
+* https://yona.io
 **@
-@(title:String, form: play.data.Form[Posting], project:Project, isAllowedToNotice:Boolean, preparedPostBody:String = "")
+@import play.data.Form
+@import org.apache.commons.lang3.StringUtils
+@(title:String, form: Form[Posting], project:Project, isAllowedToNotice:Boolean, preparedPostBody:String = "")
 
 @import utils.AccessControl._
 @import utils.TemplateHelper._
 @import utils.HtmlUtil._
+@import utils.LineEnding._
 @import models.enumeration._
-@implicitField = @{ helper.FieldConstructor(simpleForm) }
 
-@readmeUpdateMessage = @{
-  if( !requestHeader.getQueryString("readme").equals(None) ) {
-      "Update README.md"
-  }
-}
+    @implicitField = @{
+        helper.FieldConstructor(simpleForm)
+    }
+
+    @issueTemplate = @{
+        requestHeader.getQueryString("issueTemplate")
+    }
+
+    @titleMessage = @{
+        if(!requestHeader.getQueryString("readme").equals(None)) {
+            "Update README.md"
+        } else if(!issueTemplate.equals(None)) {
+            "ISSUE_TEMPLATE.md: Project Issue Template"
+        }
+    }
+
+    @path = @{
+        requestHeader.getQueryString("path")
+    }
+
+    @branch = @{
+        requestHeader.getQueryString("branch")
+    }
+
+    @isEdit = @{
+        !requestHeader.getQueryString("edit").equals(None)
+    }
 
 @projectLayout(title, project, utils.MenuType.BOARD) {
 @projectMenu(project, utils.MenuType.BOARD, "main-menu-only")
@@ -39,12 +49,9 @@
     <form action="@routes.BoardApp.newPost(project.owner, project.name)" method="post" enctype="multipart/form-data" class="nm">
       <div class="content-wrap frm-wrap">
         <dl>
-          <dt>
-            <label for="title">@Messages("title")</label>
-          </dt>
           <dd>
             @defining(form.errors().get("title")) { errors =>
-              <input type="text" id="title" name="title" class="zen-mode text title @if(errors != null) {error}" maxlength="250" tabindex="1" value="@readmeUpdateMessage"/>
+              <input type="text" id="title" name="title" class="zen-mode text title @if(errors != null) {error}" maxlength="250" tabindex="1" value="@titleMessage" placeholder="@if(path.equals(None)){@Messages("title")}else{@Messages("code.commitMsg")}"/>
               @if(errors != null) {
                 <div class="message">
                 @for(error <- errors) {
@@ -54,24 +61,42 @@
               }
             }
           </dd>
+            <dd>
+            @if(!issueTemplate.equals(None)){
+              <div class="attach-wrap">
+                <span class="help help-droppable">@Messages("issue.template.no.attachment.allow")</span>
+              </div>
+            }
+              @if(!path.equals(None)){
+                <div class="file-path-wrap">
+                  <span class="help file-path">@branch: /@path @if(!isEdit){<input type="text" name="new-file-name" class="new-file-name" value="" placeholder="filename.." tabindex="2">}</span>
+                </div>
+              }
+            </dd>
           <dd style="position: relative;">
-            @common.editor("body", preparedPostBody, "tabindex=2")
+            @common.editor("body", preparedPostBody, "tabindex=3")
           </dd>
         </dl>
           @** fileUploader **@
-        @if(!UserApp.currentUser.isAnonymous) {
+        @if(issueTemplate.equals(None) && path.equals(None)) {
+          @if(!UserApp.currentUser.isAnonymous) {
             @common.fileUploader(ResourceType.BOARD_POST, null)
+          }
         }
         @** end of fileUploader **@
 
         <div class="right-txt mt10 mb10">
-          @if(isAllowedToNotice ){
+          @if(isAllowedToNotice && issueTemplate.equals(None) && path.equals(None)){
           <label class="checkbox">
             <input type="checkbox" id="notice" name="notice">
             @Messages("post.notice.label")
           </label>
           }
 
+          <input type="hidden" id="issueTemplate" name="issueTemplate" value="@issueTemplate">
+          <input type="hidden" id="branch" name="branch" value="@branch">
+          <input type="hidden" id="path" name="path" value="@path">
+          <input type="hidden" id="lineEnding" name="lineEnding" value="@findLineEnding(preparedPostBody)">
           @if(isProjectResourceCreatable(UserApp.currentUser(), project, ResourceType.COMMIT)){
             @if(project.isGit && !requestHeader.getQueryString("readme").equals(None)){
             <label class="checkbox">
@@ -107,6 +132,27 @@ $(function(){
         "target": 'textarea[id^=editor-]',
         "url"   : "@Html(routes.ProjectApp.mentionList(project.owner, project.name).toString())"
     });
+
+    // Followings are used for online commit
+  @if(!path.equals(None)) {
+    var textarea = $(".textarea-box > textarea");
+    if (textarea.val() !== "") {
+        textarea.css("overflow", "hidden");
+        textarea.css("height", "1px");
+        var newHeight = (25 + textarea.prop('scrollHeight'));
+        var minHeight = 300;
+        console.log(newHeight);
+        textarea.css("height", (minHeight > newHeight ? minHeight: newHeight) + "px");
+        textarea.css("overflow", "auto");
+    }
+
+    $(".new-file-name").on("keyup", function () {
+        $("#path").val("@path" + $(this).val());
+    });
+
+    $(".project-menu-gruop > li").removeClass("active");
+    $(".code-menu").addClass("active");
+  }
 });
 </script>
 }

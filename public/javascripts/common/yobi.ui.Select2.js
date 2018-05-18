@@ -50,16 +50,24 @@
                     return !avatarURL || avatarURL.indexOf("project_default_logo.png") !== -1;
                 }
 
+                var owner = itemElement.data("owner") ? itemElement.data("owner") : "";
                 if(_doesntHaveProjectAvatar()){
-                    return $yobi.tmpl($("#tplSelect2ProjectsWithoutAvatar").text(), {
-                        "name"     : itemObject.text
+                    return $.tmpl($("#tplSelect2ProjectsWithoutAvatar").text(), {
+                        "name"     : itemObject.text,
+                        "owner"    : owner
                     });
                 } else {
-                    return $yobi.tmpl($("#tplSelect2Projects").text(), {
+                    return $.tmpl($("#tplSelect2Projects").text(), {
                         "avatarURL": avatarURL,
-                        "name"     : itemObject.text.trim()
+                        "name"     : itemObject.text.trim(),
+                        "owner"    : owner
                     });
                 }
+            },
+            "issues": function(itemObject){
+                return $.tmpl($("#tplSelect2FormatIssues").text(), {
+                    "name"     : itemObject.text
+                });
             },
             "user": function(itemObject){
                 var itemElement = $(itemObject.element);
@@ -77,7 +85,7 @@
 
                 var loginId = itemElement.data("loginId") ? "@" + itemElement.data("loginId") : "";
 
-                var formattedResult = $yobi.tmpl(tplUserItem, {
+                var formattedResult = $.tmpl(tplUserItem, {
                     "avatarURL": avatarURL,
                     "name"     : itemObject.text.trim(),
                     "loginId"  : loginId
@@ -98,7 +106,7 @@
                 var tplMilestoneItem = $("#tplSElect2FormatMilestone").text()
                                     || '<div title="[${stateLabel}] ${name}">${name}</div>';
 
-                var formattedResult = $yobi.tmpl(tplMilestoneItem, {
+                var formattedResult = $.tmpl(tplMilestoneItem, {
                     "name" : itemObject.text.trim().replace('<', '&lt;'),
                     "state": milestoneState,
                     "stateLabel": milestoneStateLabel
@@ -123,7 +131,7 @@
                     };
                     var tpl = '<i class="${css}" data-toggle="tooltip" data-html="true" data-placement="right" title="${title}"></i><span>${text}</span>';
 
-                    return $yobi.tmpl(tpl, data);
+                    return $.tmpl(tpl, data);
                 }
 
                 return '<a class="label issue-label active static" data-label-id="' + labelId + '">' + text + '</a>';
@@ -152,7 +160,7 @@
 
                 // branchType will be "unknown"
                 // if selected branch name doesn't starts with /refs
-                var formattedResult = $yobi.tmpl(tplBranchItem, {
+                var formattedResult = $.tmpl(tplBranchItem, {
                     "branchType": branchType,
                     "branchName": branchName
                 });
@@ -171,6 +179,15 @@
                 loginId = (typeof loginId !== "undefined") ? loginId.toLowerCase() : "";
 
                 return (loginId.indexOf(term) > -1) || (formattedResult.indexOf(term) > -1);
+            },
+            "projects": function(term, formattedResult, itemElement){
+              term = term.toLowerCase();
+              formattedResult = formattedResult.toLowerCase();
+
+              var owner = itemElement.data("owner") + "";
+              owner = (typeof owner !== "undefined") ? owner.toLowerCase() : "";
+
+              return (owner.indexOf(term) > -1) || (formattedResult.indexOf(term) > -1);
             }
         };
 
@@ -186,14 +203,20 @@
                     var data = [evt.object];
                     var element = $(evt.object.element);
                     var select2Object = $(evt.target).data("select2");
+                    var oldData = select2Object.data()
 
                     // Remove label which category is same with selected label from current data
                     // if selected label belonged exclusive category
                     if(element.data("categoryIsExclusive")){
-                        var filtered = _filterLabelInSameCategory(evt.object, select2Object.data());
+                        var categoryId = $(evt.object.element).data("categoryId");
+                        var filtered = _filterLabelInSameCategory(categoryId, oldData);
                         data = data.concat(filtered);
+
+                        if(oldData.length != filtered.length){
+                            _unselect(select2Object, categoryId);
+                        }
                     } else {
-                        data = data.concat(select2Object.data());
+                        data = data.concat(oldData);
                     }
 
                     _rememberLastScrollTop();
@@ -201,7 +224,7 @@
                     // Set data as filtered
                     // and trigger "change" event
                     select2Object.data(data, true);
-
+                
                     if(select2Object.opts.closeOnSelect !== false){
                         select2Object.close();
                     }
@@ -210,9 +233,7 @@
                     return false;
                 }
 
-                function _filterLabelInSameCategory(label, currentData){
-                    var categoryId = $(label.element).data("categoryId");
-
+                function _filterLabelInSameCategory(categoryId, currentData){
                     return currentData.filter(function(data){
                         return (categoryId !== $(data.element).data("categoryId"));
                     });
@@ -234,6 +255,14 @@
 
                 function _onOpenIssueLabel(){
                     _restoreLastScrollTop();
+                }
+
+                // When select2 v3.x is migrated to v4.x, it will probably need to be updated.
+                function _unselect(select2Object, categoryId){
+                    select2Object.results.find(".select2-selected").filter(function(){
+                        var optionElement = $(this).data("select2-data").element; 
+                        return $(optionElement).data("categoryId") === categoryId; 
+                    }).removeClass("select2-selected");
                 }
             }
         };

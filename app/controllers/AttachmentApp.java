@@ -1,23 +1,9 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2012 NAVER Corp.
- * http://yobi.io
- *
- * @author Yi EungJun
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+ * https://yona.io
+ **/
 package controllers;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -53,6 +39,24 @@ public class AttachmentApp extends Controller {
     public static final long TEMPORARYFILES_KEEPUP_TIME_MILLIS = Configuration.root()
             .getMilliseconds("application.temporaryfiles.keep-up.time", 24 * 60 * 60 * 1000L);
 
+    private static User findUploader(Map<String,String[]> formUrlEncoded) {
+        if(formUrlEncoded == null || formUrlEncoded.isEmpty()) {
+            return UserApp.currentUser();
+        }
+        String authorEmail = HttpUtil.getFirstValueFromQuery(formUrlEncoded, "authorEmail");
+        User found = User.findByEmail(authorEmail);
+        if(found.isAnonymous()){
+            String authorLoginId = HttpUtil.getFirstValueFromQuery(formUrlEncoded, "authorLoginId");
+            User fallbackSearch = User.findByLoginId(authorLoginId);
+            if( fallbackSearch.isAnonymous() ) {
+                return UserApp.currentUser();
+            } else {
+                return fallbackSearch;
+            }
+        }
+        return found;
+    }
+
     public static Result uploadFile() throws NoSuchAlgorithmException, IOException {
         // Get the file from request.
         FilePart filePart =
@@ -62,9 +66,9 @@ public class AttachmentApp extends Controller {
         }
         File file = filePart.getFile();
 
-        User uploader = UserApp.currentUser();
+        User uploader = findUploader(request().body().asMultipartFormData().asFormUrlEncoded());
         if (uploader.isAnonymous()) {
-            uploader = User.findByUserToken(request().getHeader("Yona-Token"));
+            uploader = User.findByUserToken(User.extractUserTokenFromRequestHeader(request()));
         }
 
         // Anonymous cannot upload a file.

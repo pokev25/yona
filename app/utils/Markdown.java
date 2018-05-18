@@ -1,31 +1,21 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2013 NAVER Corp.
- * http://yobi.io
- *
- * @author Keesun Baik
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp.
+ * https://yona.io
+ **/
 package utils;
 
 import models.Project;
 import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.lang.StringUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+import org.owasp.html.HtmlPolicyBuilder;
+import org.owasp.html.PolicyFactory;
+import org.owasp.html.Sanitizers;
 
 import javax.annotation.Nonnull;
 import javax.script.Invocable;
@@ -43,12 +33,24 @@ public class Markdown {
     private static final String MARKED_JS_FILE = "public/javascripts/lib/marked.js";
     private static final String HIGHLIGHT_JS_FILE = "public/javascripts/lib/highlight/highlight.pack.js";
     private static ScriptEngine engine = buildEngine();
+    private static PolicyFactory sanitizerPolicy = Sanitizers.FORMATTING
+            .and(Sanitizers.IMAGES)
+            .and(Sanitizers.STYLES)
+            .and(Sanitizers.TABLES)
+            .and(Sanitizers.BLOCKS)
+            .and(new HtmlPolicyBuilder()
+                    .allowStandardUrlProtocols().allowElements("a")
+                    .allowAttributes("href", "name", "target").onElements("a")
+                    .toFactory())
+            .and(new HtmlPolicyBuilder().allowElements("pre").toFactory())
+            .and(new HtmlPolicyBuilder()
+                    .allowAttributes("class", "id", "style", "width", "height").globally().toFactory());
 
     private static ScriptEngine buildEngine() {
-        ScriptEngineManager manager = new ScriptEngineManager();
+        ScriptEngineManager manager = new ScriptEngineManager(null);
         InputStream is = null;
         Reader reader = null;
-        ScriptEngine _engine = manager.getEngineByName("rhino");
+        ScriptEngine _engine = manager.getEngineByName("JavaScript");
 
         try {
             is = Thread.currentThread().getContextClassLoader().getResourceAsStream(XSS_JS_FILE);
@@ -59,9 +61,6 @@ public class Markdown {
             reader = new InputStreamReader(is, Config.getCharset());
             _engine.eval(reader);
 
-            is = Thread.currentThread().getContextClassLoader().getResourceAsStream(HIGHLIGHT_JS_FILE);
-            reader = new InputStreamReader(is, Config.getCharset());
-            _engine.eval(reader);
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         } finally {
@@ -121,13 +120,8 @@ public class Markdown {
         return source;
     }
 
-    private static String sanitize(String source) {
-        try {
-            Object filter = engine.eval("new Filter();");
-            return (String) ((Invocable) engine).invokeMethod(filter, "defence", source);
-        } catch (Exception ex) {
-            throw new RuntimeException(ex);
-        }
+    public static String sanitize(String source) {
+        return  sanitizerPolicy.sanitize(source);
     }
 
     private static String renderWithHighlight(String source, boolean breaks) {
@@ -137,11 +131,14 @@ public class Markdown {
             return ZipUtil.decompress(cached);
         }
         try {
-            Object options = engine.eval("new Object({gfm: true, tables: true, breaks: " + breaks + ", " +
-                    "pedantic: false, sanitize: false, smartLists: true," +
-                    "highlight : function(sCode, sLang) { " +
-                    "if(sLang) { try { return hljs.highlight(sLang.toLowerCase(), sCode).value;" +
-                    " } catch(oException) { return sCode; } } }});");
+            Object options = engine.eval("new Object({ "
+                    + "    gfm: true, "
+                    + "    tables: true, "
+                    + "    breaks: true, "
+                    + "    pedantic: false, "
+                    + "    sanitize: false, "
+                    + "    smartLists: true "
+                    + "}) ");
             String rendered = renderByMarked(source, options);
             rendered = removeJavascriptInHref(rendered);
             rendered = checkReferrer(rendered);
@@ -210,10 +207,53 @@ public class Markdown {
 
     public static String render(@Nonnull String source, Project project, boolean breaks) {
         AutoLinkRenderer autoLinkRenderer = new AutoLinkRenderer(renderWithHighlight(source, breaks), project);
-        return autoLinkRenderer.render();
+        return autoLinkRenderer.render(null);
+    }
+
+    public static String render(@Nonnull String source, Project project, boolean breaks, String lang) {
+        AutoLinkRenderer autoLinkRenderer = new AutoLinkRenderer(renderWithHighlight(source, breaks), project);
+        return autoLinkRenderer.render(lang);
     }
 
     public static String render(@Nonnull String source, Project project) {
         return render(source, project, true);
     }
+
+    public static String render(@Nonnull String source, Project project, String lang) {
+        return render(source, project, true, lang);
+    }
+
+    public static String renderFileInCodeBrowser(@Nonnull String source, Project project) {
+        String imageLinkFilter = replaceImageLinkPath(project, source);
+        AutoLinkRenderer autoLinkRenderer = new AutoLinkRenderer(renderWithHighlight(imageLinkFilter, true), project);
+        return autoLinkRenderer.render(null);
+    }
+
+    public static String renderFileInReadme(@Nonnull String source, Project project) {
+        String relativeLinksToCodeBrowserPath = replaceContentsLinkToCodeBrowerPath(project, source);
+        AutoLinkRenderer autoLinkRenderer = new AutoLinkRenderer(renderWithHighlight(relativeLinksToCodeBrowserPath, true), project);
+        return autoLinkRenderer.render(null);
+    }
+
+    private static String replaceImageLinkPath(Project project, String text){
+        String root = play.Configuration.root().getString("application.context", "");
+        if (StringUtils.isNotEmpty(root)) {
+            root = "/" + root;
+        }
+        final String imageLink = "!\\[(?<text>[^\\]]*)\\]\\(\\/?(?!https\\:|http\\:|ftp\\:|file\\:)(?<link>[^\\)]*)\\)";
+        return text.replaceAll(imageLink, "![$1](/" + root + project.owner + "/" + project.name + "/files/" + project.defaultBranch().replaceAll("refs/heads/", "") + "/$2)");
+    }
+
+    private static String replaceContentsLinkToCodeBrowerPath(Project project, String text){
+        String root = play.Configuration.root().getString("application.context", "");
+        if (StringUtils.isNotEmpty(root)) {
+            root = "/" + root;
+        }
+        final String imageLink = "!\\[(?<text>[^\\]]*)\\]\\(\\/?(?!https\\:|http\\:|ftp\\:|file\\:)(?<link>[^\\)]*)\\)";
+        final String normalLocalLink = "(?<space>[^!])\\[(?<text>[^\\]]*)\\]\\(\\/?(?!https\\:|http\\:|ftp\\:|file\\:)(?<link>[^\\)]*)\\)";
+        String imageFilteredText = text.replaceAll(imageLink, "![$1](/" + root + project.owner + "/" + project.name + "/files/" + project.defaultBranch().replaceAll("refs/heads/", "") + "/$2)");
+        return imageFilteredText.replaceAll(normalLocalLink, "$1[$2](/" + root + project.owner + "/" + project.name + "/code/" + project.defaultBranch().replaceAll("refs/heads/", "") + "/$3)");
+
+    }
+
 }

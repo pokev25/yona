@@ -196,4 +196,42 @@ public class HttpUtil {
             return null;
         }
     }
+
+    public static String decodeUrlString(String str) {
+        String targetStr = str;
+        try {
+            targetStr = URLDecoder.decode(str, "UTF8");
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        } finally {
+            return targetStr;
+        }
+    }
+
+    public static String encodeUrlString(String str) {
+        String targetStr = str;
+        try {
+            targetStr = URLEncoder.encode(str, "UTF8");
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        } finally {
+            return targetStr;
+        }
+    }
+
+    // It is made for path which contains UTF8 chars
+    public static String getEncodeEachPathName(String path) {
+        if (StringUtils.isBlank(path)) {
+            return path;
+        }
+        if (!path.contains("/")) {
+            return HttpUtil.encodeUrlString(path);
+        }
+        String[] paths = path.split("/");
+        String[] encodedPaths = new String[paths.length];
+        for ( int i = 0; i < paths.length; i++ ) {
+            encodedPaths[i] = HttpUtil.encodeUrlString(paths[i]);
+        }
+        return String.join("/", encodedPaths);
+    }
 }

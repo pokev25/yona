@@ -30,3 +30,6 @@ conf/application.conf
 conf/generated.keystore
 conf/application-logger.xml
 .java-version
+migration-client
+conf/play-authenticate/mine.conf
+conf/social-login.conf

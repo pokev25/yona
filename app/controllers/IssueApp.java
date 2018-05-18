@@ -1,23 +1,9 @@
 /**
- * Yobi, Project Hosting SW
- *
- * Copyright 2012 NAVER Corp.
- * http://yobi.io
- *
- * @author Tae
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+ * Yona, 21st Century Project Hosting SW
+ * <p>
+ * Copyright Yona & Yobi Authors & NAVER Corp. & NAVER LABS Corp.
+ * https://yona.io
+ **/
 package controllers;
 
 import actions.NullProjectCheckAction;
@@ -29,8 +15,10 @@ import controllers.annotation.IsCreatable;
 import jxl.write.WriteException;
 import models.*;
 import models.enumeration.Operation;
+import models.enumeration.ProjectScope;
 import models.enumeration.ResourceType;
 import models.enumeration.State;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.tika.Tika;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -47,9 +35,7 @@ import views.html.organization.group_issue_list;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @AnonymousCheck
 public class IssueApp extends AbstractPostingApp {
@@ -58,6 +44,7 @@ public class IssueApp extends AbstractPostingApp {
 
     @AnonymousCheck(requiresLogin = false, displaysFlashMessage = true)
     public static Result organizationIssues(@Nonnull String organizationName, @Nonnull String state, @Nonnull String format, int pageNum) throws WriteException, IOException {
+
         // SearchCondition from param
         Form<models.support.SearchCondition> issueParamForm = new Form<>(models.support.SearchCondition.class);
         models.support.SearchCondition searchCondition = issueParamForm.bindFromRequest().get();
@@ -75,6 +62,12 @@ public class IssueApp extends AbstractPostingApp {
     }
 
     @AnonymousCheck(requiresLogin = true, displaysFlashMessage = true)
+    public static Result userIssuesPage() throws WriteException, IOException {
+        String pageNum = StringUtils.defaultIfBlank(request().getQueryString("pageNum"), "1");
+        return controllers.IssueApp.userIssues("", "html", Integer.parseInt(pageNum));
+    }
+
+    @AnonymousCheck(requiresLogin = true, displaysFlashMessage = true)
     public static Result userIssues(String state, String format, int pageNum) throws WriteException, IOException {
         Project project = null;
         // SearchCondition from param
@@ -84,6 +77,12 @@ public class IssueApp extends AbstractPostingApp {
             searchCondition.assigneeId = UserApp.currentUser().id;
         }
         searchCondition.pageNum = pageNum - 1;
+
+        // default for my issues
+        String orderBy = request().getQueryString("orderBy");
+        if (StringUtils.isBlank(orderBy)) {
+            searchCondition.orderBy = "updatedDate";
+        }
 
         // determine pjax or json when requested with XHR
         if (HttpUtil.isRequestedWithXHR(request())) {
@@ -108,7 +107,14 @@ public class IssueApp extends AbstractPostingApp {
     }
 
     private static boolean hasNotConditions(models.support.SearchCondition searchCondition) {
-        return searchCondition.assigneeId == null && searchCondition.authorId == null && searchCondition.mentionId == null;
+        return searchCondition.assigneeId == null && searchCondition.authorId == null && searchCondition.mentionId == null
+                && searchCondition.commenterId == null && searchCondition.sharerId == null;
+    }
+
+    @Transactional
+    @IsAllowed(Operation.READ)
+    public static Result issues(String ownerName, String projectName) throws WriteException, IOException {
+       return issues(ownerName, projectName, State.OPEN.state(), "html", 1);
     }
 
     @Transactional
@@ -163,9 +169,10 @@ public class IssueApp extends AbstractPostingApp {
 
     private static Result issuesAsHTML(Project project, Page<Issue> issues, models.support.SearchCondition searchCondition){
         if(project == null){
-            return ok(my_list.render("title.issueList", issues, searchCondition, project));
+            return ok(my_list.render("menu.issue", issues, searchCondition, project));
         } else {
-            return ok(list.render("title.issueList", issues, searchCondition, project));
+            UserApp.currentUser().visits(project);
+            return ok(list.render("menu.issue", issues, searchCondition, project));
         }
 
     }
@@ -173,7 +180,7 @@ public class IssueApp extends AbstractPostingApp {
     private static Result issuesAsExcel(Project project, ExpressionList<Issue> el) throws WriteException, IOException {
         byte[] excelData = Issue.excelFrom(el.findList());
         String filename = HttpUtil.encodeContentDisposition(
-                project.name + "_issues_" + JodaDateUtil.today().getTime() + "." + EXCEL_EXT);
+                project.name + "_issues_" +  JodaDateUtil.getDateStringWithoutSpace(new Date()) + "." + EXCEL_EXT);
 
         response().setHeader("Content-Type", new Tika().detect(filename));
         response().setHeader("Content-Disposition", "attachment; " + filename);
@@ -263,7 +270,7 @@ public class IssueApp extends AbstractPostingApp {
             result.put("id", issueInfo.getNumber());
             result.put("title", issueInfo.title);
             result.put("state", issueInfo.state.toString());
-            result.put("body", StringUtils.abbreviate(issueInfo.body, 1000));
+            result.put("body", StringUtils.abbreviate(issueInfo.body, 200));
             result.put("createdDate", issueInfo.createdDate.toString());
             result.put("link", routes.IssueApp.issue(project.owner, project.name, issueInfo.getNumber()).toString());
             return ok(result);
@@ -284,11 +291,64 @@ public class IssueApp extends AbstractPostingApp {
         return ok(partial_comments.render(project, issueInfo));
     }
 
+    public static Result newDirectIssueForm() {
+        User current = UserApp.currentUser();
+
+        Project project = null;
+
+        // Fallback #1: Last visited project
+        List<Project> visitedProjects = current.getVisitedProjects();
+        if (project == null && !CollectionUtils.isEmpty(visitedProjects)) {
+            project = visitedProjects.get(0);
+        }
+
+        if(project != null){
+            return newIssueForm(project.owner, project.name);
+        } else {
+            flash(Constants.WARNING, Messages.get("project.is.empty"));
+            return Application.index();
+        }
+    }
+
+    public static Result newDirectMyIssueForm() {
+        User current = UserApp.currentUser();
+
+        // Prefixed project. inbox or _private
+        Project project = Project.findByOwnerAndProjectName(current.loginId, "inbox");
+        if( project == null ) {
+            project = Project.findByOwnerAndProjectName(current.loginId, "_private");
+        }
+
+        // Fallback to my project which is private and recently created
+        if (project == null) {
+            List<Project> projects = Project.findProjectsCreatedByUserAndScope(current.loginId, ProjectScope.PRIVATE, "createdDate desc");
+            if (!CollectionUtils.isEmpty(projects)) {
+                project = projects.get(0);
+            }
+        }
+
+        // Fallback to my public project
+        if( project == null ) {
+            List<Project> projects = Project.findProjectsCreatedByUserAndScope(current.loginId, ProjectScope.PUBLIC, "createdDate desc");
+            if (!CollectionUtils.isEmpty(projects)) {
+                project = projects.get(0);
+            }
+        }
+
+        if(project != null){
+            return newIssueForm(project.owner, project.name);
+        } else {
+            flash(Constants.WARNING, Messages.get("project.is.empty"));
+            return Application.index();
+        }
+    }
+
     @AnonymousCheck(requiresLogin = true, displaysFlashMessage = true)
     @IsCreatable(ResourceType.ISSUE_POST)
     public static Result newIssueForm(String ownerName, String projectName) {
         Project project = Project.findByOwnerAndProjectName(ownerName, projectName);
-        return ok(create.render("title.newIssue", new Form<>(Issue.class), project));
+        String issueTemplate = StringUtils.defaultIfBlank(project.getIssueTemplate(), "");
+        return ok(create.render("title.newIssue", new Form<>(Issue.class), project, issueTemplate));
     }
 
     @Transactional
@@ -325,49 +385,11 @@ public class IssueApp extends AbstractPostingApp {
                 continue;
             }
 
-            boolean assigneeChanged = false;
-            User oldAssignee = null;
-            if (issueMassUpdate.assignee != null) {
-                if(hasAssignee(issue)) {
-                    oldAssignee = issue.assignee.user;
-                }
-                Assignee newAssignee;
-                if (issueMassUpdate.assignee.isAnonymous()) {
-                    newAssignee = null;
-                } else {
-                    newAssignee = Assignee.add(issueMassUpdate.assignee.id, project.id);
-                }
-                assigneeChanged = !issue.assignedUserEquals(newAssignee);
-                issue.assignee = newAssignee;
-            }
-
-            boolean stateChanged = false;
-            State oldState = null;
-            if ((issueMassUpdate.state != null) && (issue.state != issueMassUpdate.state)) {
-                stateChanged = true;
-                oldState = issue.state;
-                issue.state = issueMassUpdate.state;
-            }
-
-            if (issueMassUpdate.milestone != null) {
-                if(issueMassUpdate.milestone.isNullMilestone()) {
-                    issue.milestone = null;
-                } else {
-                    issue.milestone = issueMassUpdate.milestone;
-                }
-            }
-
-            if (issueMassUpdate.attachingLabelIds != null) {
-                for (Long labelId : issueMassUpdate.attachingLabelIds) {
-                    issue.labels.add(IssueLabel.finder.byId(labelId));
-                }
-            }
-
-            if (issueMassUpdate.detachingLabelIds != null) {
-                for (Long labelId : issueMassUpdate.detachingLabelIds) {
-                    issue.labels.remove(IssueLabel.finder.byId(labelId));
-                }
-            }
+            updateAssigneeIfChanged(issueMassUpdate.assignee, project, issue);
+            updateStateIfChanged(issueMassUpdate.state, issue);
+            updateMilestoneIfChanged(issueMassUpdate.milestone, issue);
+            updateLabelIfChanged(issueMassUpdate.attachingLabelIds,
+                    issueMassUpdate.detachingLabelIds, issue);
 
             if (issueMassUpdate.isDueDateChanged) {
                 issue.dueDate = JodaDateUtil.lastSecondOfDay(issueMassUpdate.dueDate);
@@ -376,15 +398,6 @@ public class IssueApp extends AbstractPostingApp {
             issue.updatedDate = JodaDateUtil.now();
             issue.update();
             updatedItems++;
-
-            if(assigneeChanged) {
-                NotificationEvent notiEvent = NotificationEvent.afterAssigneeChanged(oldAssignee, issue);
-                IssueEvent.addFromNotificationEvent(notiEvent, issue, UserApp.currentUser().loginId);
-            }
-            if(stateChanged) {
-                NotificationEvent notiEvent = NotificationEvent.afterStateChanged(oldState, issue);
-                IssueEvent.addFromNotificationEvent(notiEvent, issue, UserApp.currentUser().loginId);
-            }
         }
 
         if (updatedItems == 0 && rejectedByPermission > 0) {
@@ -409,6 +422,106 @@ public class IssueApp extends AbstractPostingApp {
         }
     }
 
+    private static void updateLabelIfChanged(List<Long> attachingLabelIds, List<Long> detachingLabelIds,
+                                             Issue issue) {
+        boolean isLabelChanged = false;
+        StringBuilder addedLabels = new StringBuilder();
+        StringBuilder deletedLabels = new StringBuilder();
+
+        if (attachingLabelIds != null) {
+            for (Long labelId : attachingLabelIds) {
+                IssueLabel label = IssueLabel.finder.byId(labelId);
+                issue.labels.add(label);
+                isLabelChanged = true;
+                addedLabels.append(label.category.name).append(" - ").append(label.name);
+            }
+        }
+
+        if (detachingLabelIds != null) {
+            for (Long labelId : detachingLabelIds) {
+                IssueLabel label = IssueLabel.finder.byId(labelId);
+                issue.labels.remove(label);
+                isLabelChanged = true;
+                deletedLabels.append(label.category.name).append(" - ").append(label.name);
+            }
+        }
+
+        if(isLabelChanged) {
+            NotificationEvent notiEvent = NotificationEvent.afterIssueLabelChanged(
+                    addedLabels.toString(),
+                    deletedLabels.toString(),
+                    issue);
+            IssueEvent.addFromNotificationEventWithoutSkipEvent(notiEvent, issue, UserApp.currentUser().loginId);
+        }
+    }
+
+    private static void updateMilestoneIfChanged(Milestone newMilestone, Issue issue) {
+
+        Long oldMilestoneId = issue.milestoneId();
+
+        if (!isMilestoneChanged(newMilestone, issue.milestone)) {
+            return;
+        }
+
+        if(newMilestone.isNullMilestone()) {
+            issue.milestone = null;
+        } else {
+            issue.milestone = newMilestone;
+        }
+        NotificationEvent notiEvent = NotificationEvent.afterMilestoneChanged(oldMilestoneId, issue);
+        IssueEvent.addFromNotificationEvent(notiEvent, issue, UserApp.currentUser().loginId);
+    }
+
+    private static boolean isMilestoneChanged(Milestone newMilestone, Milestone oldMilestone) {
+        if (newMilestone == null) {
+            return false;
+        }
+
+        if (oldMilestone != null && oldMilestone.id.equals(newMilestone.id)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static void updateStateIfChanged(State newState, Issue issue) {
+        boolean stateChanged = false;
+        State oldState = null;
+        if ((newState != null) && (issue.state != newState)) {
+            stateChanged = true;
+            oldState = issue.state;
+            issue.state = newState;
+        }
+        if(stateChanged) {
+            NotificationEvent notiEvent = NotificationEvent.afterStateChanged(oldState, issue);
+            IssueEvent.addFromNotificationEvent(notiEvent, issue, UserApp.currentUser().loginId);
+        }
+    }
+
+    private static void updateAssigneeIfChanged(User assignee, Project project, Issue issue) {
+        boolean assigneeChanged = false;
+        User oldAssignee = null;
+
+        if (assignee != null) {
+            if(hasAssignee(issue)) {
+                oldAssignee = issue.assignee.user;
+            }
+            Assignee newAssignee;
+            if (assignee.isAnonymous()) {
+                newAssignee = null;
+            } else {
+                newAssignee = Assignee.add(assignee.id, project.id);
+            }
+            assigneeChanged = !issue.assignedUserEquals(newAssignee);
+            issue.assignee = newAssignee;
+        }
+
+        if(assigneeChanged) {
+            NotificationEvent notiEvent = NotificationEvent.afterAssigneeChanged(oldAssignee, issue);
+            IssueEvent.addFromNotificationEvent(notiEvent, issue, UserApp.currentUser().loginId);
+        }
+    }
+
     @Transactional
     @IsCreatable(ResourceType.ISSUE_POST)
     public static Result newIssue(String ownerName, String projectName) {
@@ -416,25 +529,56 @@ public class IssueApp extends AbstractPostingApp {
         Project project = Project.findByOwnerAndProjectName(ownerName, projectName);
 
         if (issueForm.hasErrors()) {
-            return badRequest(create.render("error.validation", issueForm, project));
+            String issueTemplate = StringUtils.defaultIfBlank(project.getIssueTemplate(), "");
+            return badRequest(create.render("error.validation", issueForm, project, issueTemplate));
         }
 
         final Issue newIssue = issueForm.get();
-        removeAnonymousAssignee(newIssue);
+        if(hasTargetProject(newIssue)){
+            Project toAnotherProject = Project.find.byId(Long.valueOf(newIssue.targetProjectId));
+            if(toAnotherProject == null){
+                flash(Constants.WARNING, Messages.get("error.notfound.project"));
+                return badRequest(create.render("title.newIssue", new Form<>(Issue.class), project, null));
+            } else {
+                if (!AccessControl.isProjectResourceCreatable(
+                        UserApp.currentUser(), toAnotherProject, ResourceType.ISSUE_POST)) {
+                    return forbidden(ErrorViews.Forbidden.render("error.forbidden", toAnotherProject));
+                }
+                project = toAnotherProject;
+            }
+        }
 
         if (newIssue.body == null) {
             return status(REQUEST_ENTITY_TOO_LARGE,
                     ErrorViews.RequestTextEntityTooLarge.render());
         }
 
+        if(StringUtils.isNotEmpty(newIssue.parentIssueId)){
+            newIssue.parent = Issue.finder.byId(Long.valueOf(newIssue.parentIssueId));
+        }
         newIssue.createdDate = JodaDateUtil.now();
         newIssue.updatedDate = JodaDateUtil.now();
         newIssue.setAuthor(UserApp.currentUser());
         newIssue.project = project;
 
+        String assineeLoginId = null;
+        String[] assigneeLoginIds = request().body().asMultipartFormData().asFormUrlEncoded().get("assigneeLoginId");
+        if(assigneeLoginIds != null && assigneeLoginIds.length > 0) {
+            assineeLoginId = assigneeLoginIds[0];
+        }
+
+        User assigneeUser = User.findByLoginId(assineeLoginId);
+
+        if(!assigneeUser.isAnonymous()){
+            newIssue.assignee = new Assignee(assigneeUser.id, project.id);
+        } else {
+            newIssue.assignee = null;
+        }
         newIssue.state = State.OPEN;
 
-        addLabels(newIssue, request());
+        if (newIssue.project.id.equals(Project.findByOwnerAndProjectName(ownerName, projectName).id)) {
+            addLabels(newIssue, request());
+        }
         setMilestone(issueForm, newIssue);
 
         newIssue.dueDate = JodaDateUtil.lastSecondOfDay(newIssue.dueDate);
@@ -466,7 +610,11 @@ public class IssueApp extends AbstractPostingApp {
         Project project = Project.findByOwnerAndProjectName(ownerName, projectName);
         Issue issue = Issue.findByNumber(project, number);
 
-        if (!AccessControl.isAllowed(UserApp.currentUser(), issue.asResource(), Operation.UPDATE)) {
+        if (issue == null) {
+            return notFound(ErrorViews.Forbidden.render("error.notfound", project));
+        }
+
+        if (!AccessControl.isAllowed(UserApp.currentUser(), issue.asResource(), Operation.READ)) {
             return forbidden(ErrorViews.Forbidden.render("error.forbidden", project));
         }
 
@@ -483,7 +631,11 @@ public class IssueApp extends AbstractPostingApp {
         final Issue issue = Issue.findByNumber(project, number);
 
         Call redirectTo = routes.IssueApp.issue(project.owner, project.name, number);
-        issue.toNextState();
+        State state = issue.toNextState();
+
+        if(state == State.OPEN && issue.hasParentIssue() && issue.parent.state == State.CLOSED) {
+            issue.parent.toNextState();
+        }
         NotificationEvent notiEvent = NotificationEvent.afterStateChanged(issue.previousState(), issue);
         IssueEvent.addFromNotificationEvent(notiEvent, issue, UserApp.currentUser().loginId);
         return redirect(redirectTo);
@@ -514,6 +666,13 @@ public class IssueApp extends AbstractPostingApp {
         }
     }
 
+    private static void addIssueMovedNotification(Project previous, Issue issue) {
+        if (isRequestedToOtherProject(previous, issue.project)) {
+            NotificationEvent notiEvent = NotificationEvent.afterIssueMoved(previous, issue);
+            IssueEvent.addFromNotificationEvent(notiEvent, issue, UserApp.currentUser().loginId);
+        }
+    }
+
     @With(NullProjectCheckAction.class)
     public static Result editIssue(String ownerName, String projectName, Long number) {
         Form<Issue> issueForm = new Form<>(Issue.class).bindFromRequest();
@@ -521,18 +680,47 @@ public class IssueApp extends AbstractPostingApp {
         Project project = Project.findByOwnerAndProjectName(ownerName, projectName);
 
         if (issueForm.hasErrors()) {
+            flash(Constants.WARNING, issueForm.error("name").message());
             return badRequest(edit.render("error.validation", issueForm, Issue.findByNumber(project, number), project));
         }
 
         final Issue issue = issueForm.get();
-        setAssignee(issueForm, issue, project);
-        removeAnonymousAssignee(issue);
+
+        String assineeLoginId = request().body().asMultipartFormData()
+                .asFormUrlEncoded().get("assigneeLoginId")[0];
+
+        User assigneeUser = User.findByLoginId(assineeLoginId);
+        if(!assigneeUser.isAnonymous()){
+            issue.assignee = new Assignee(assigneeUser.id, project.id);
+        } else {
+            issue.assignee = null;
+        }
+
         setMilestone(issueForm, issue);
         issue.dueDate = JodaDateUtil.lastSecondOfDay(issue.dueDate);
 
-        final Issue originalIssue = Issue.findByNumber(project, number);
+        Issue originalIssue = Issue.findByNumber(project, number);
+        if(hasTargetProject(issue)) {
+            Project toOtherProject = Project.find.byId(Long.valueOf(issue.targetProjectId));
+            if (toOtherProject == null) {
+                flash(Constants.WARNING, Messages.get("error.notfound.project"));
+                return badRequest(edit.render("error.validation", issueForm, Issue.findByNumber(project, number), project));
+            }
 
-        Call redirectTo = routes.IssueApp.issue(project.owner, project.name, number);
+            if (!AccessControl.isProjectResourceCreatable(
+                    UserApp.currentUser(), toOtherProject, ResourceType.ISSUE_POST)) {
+                return forbidden(ErrorViews.Forbidden.render("error.forbidden", toOtherProject));
+            }
+
+            if (isRequestedToOtherProject(project, toOtherProject)) {
+                moveIssueToOtherProject(originalIssue, toOtherProject);
+                issue.milestone = null;
+            } else {
+                updateSubtaskRelation(issue, originalIssue);
+            }
+        }
+
+        Call redirectTo = routes.IssueApp.issue(originalIssue.project.owner, originalIssue.project.name, originalIssue.getNumber());
 
         // preUpdateHook.run would be called just before this issue is updated.
         // It updates some properties only for issues, such as assignee or labels, but not for non-issues.
@@ -544,7 +732,17 @@ public class IssueApp extends AbstractPostingApp {
                 // Do not replace it to 'issue.comments = originalIssue.comments;'
                 issue.voters.addAll(originalIssue.voters);
                 issue.comments = originalIssue.comments;
-                addLabels(issue, request());
+                final Project previous = Project.findByOwnerAndProjectName(ownerName, projectName);
+                if(isRequestedToOtherProject(originalIssue.project, previous)){
+                    issue.labels = originalIssue.labels;
+                    if(isFromMyOwnPrivateProject(previous)){
+                        issue.history = "";
+                    } else {
+                        addIssueMovedNotification(previous, issue);
+                    }
+                } else {
+                    addLabels(issue, request());
+                }
 
                 if(isSelectedToSendNotificationMail() || !originalIssue.isAuthoredBy(UserApp.currentUser())){
                     addAssigneeChangedNotification(issue, originalIssue);
@@ -555,6 +753,68 @@ public class IssueApp extends AbstractPostingApp {
         };
 
         return editPosting(originalIssue, issue, issueForm, redirectTo, preUpdateHook);
+    }
+
+    private static boolean hasTargetProject(Issue issue) {
+        return StringUtils.isNotEmpty(issue.targetProjectId);
+    }
+
+    private static boolean isFromMyOwnPrivateProject(Project previous) {
+        return previous.isPrivate() && previous.owner.equalsIgnoreCase(UserApp.currentUser().loginId);
+    }
+
+    private static void moveIssueToOtherProject(Issue originalIssue, Project toOtherProject) {
+        originalIssue.project = toOtherProject;
+        originalIssue.setNumber(Project.increaseLastIssueNumber(toOtherProject.id));
+        originalIssue.createdDate = JodaDateUtil.now();
+        originalIssue.updatedDate = JodaDateUtil.now();
+        originalIssue.milestone = null;
+        for(IssueComment comment: originalIssue.comments){
+            comment.projectId = originalIssue.project.id;
+            comment.update();
+        }
+        if (UserApp.currentUser().isMemberOf(toOtherProject) && originalIssue.labels.size() > 0) {
+            transferLabels(originalIssue, toOtherProject);
+        } else {
+            originalIssue.labels = new HashSet<>();
+        }
+        originalIssue.update();
+    }
+
+    private static void transferLabels(Issue originalIssue, Project toProject) {
+        Set<IssueLabel> newLabels = new HashSet<>();
+
+        for (IssueLabel label : originalIssue.getLabels()) {
+            IssueLabel copiedLabel = IssueLabel.copyIssueLabel(toProject, label);
+            IssueLabel existedLabel = copiedLabel.findExistLabel();
+            if(existedLabel == null){
+                toProject.issueLabels.add(copiedLabel);
+                copiedLabel.issues.add(originalIssue);
+                copiedLabel.save();
+                toProject.update();
+            } else {
+                copiedLabel = existedLabel;
+                copiedLabel.issues.add(originalIssue);
+                copiedLabel.update();
+            }
+            newLabels.add(copiedLabel);
+        }
+
+        originalIssue.labels = new HashSet<>(newLabels);
+    }
+
+    private static boolean isRequestedToOtherProject(Project project, Project toOtherProject) {
+        return !project.id.equals(toOtherProject.id);
+    }
+
+    private static void updateSubtaskRelation(Issue issue, Issue originalIssue) {
+        if(StringUtils.isEmpty(issue.parentIssueId)){
+            issue.parent = null;
+        } else {
+            issue.parent = Issue.finder.byId(Long.valueOf(issue.parentIssueId));
+        }
+        originalIssue.parent = issue.parent;
+        originalIssue.update();
     }
 
     private static void setAssignee(Form<Issue> issueForm, Issue issue, Project project) {
@@ -590,6 +850,7 @@ public class IssueApp extends AbstractPostingApp {
         Call redirectTo =
             routes.IssueApp.issues(project.owner, project.name, State.OPEN.state(), "html", 1);
 
+        NotificationEvent.afterResourceDeleted(issue, UserApp.currentUser());
         return delete(issue, issue.asResource(), redirectTo);
     }
 
@@ -615,33 +876,42 @@ public class IssueApp extends AbstractPostingApp {
 
         final IssueComment comment = commentForm.get();
 
-        IssueComment existingComment = IssueComment.find.where().eq("id", comment.id).findUnique();
 
         if (commentForm.hasErrors()) {
             flash(Constants.WARNING, "common.comment.empty");
             return redirect(routes.IssueApp.issue(project.owner, project.name, number));
         }
 
-        Comment savedComment;
-        if (existingComment != null) {
-            existingComment.contents = comment.contents;
-            savedComment = saveComment(existingComment, getContainerUpdater(issue, comment));
-            if(isSelectedToSendNotificationMail() || !existingComment.isAuthoredBy(UserApp.currentUser())){
-                NotificationEvent.afterCommentUpdated(savedComment);
-            }
-        } else {
-            savedComment = saveComment(comment, getContainerUpdater(issue, comment));
-            NotificationEvent.afterNewComment(savedComment);
-        }
+        Comment savedComment = saveComment(project, issue, comment);
 
         if( containsStateTransitionRequest() ){
             toNextState(number, project);
             IssueEvent.addFromNotificationEvent(
                     NotificationEvent.afterStateChanged(issue.previousState(), issue),
                     issue, UserApp.currentUser().loginId);
+        } else {
+            issue.updatedDate = JodaDateUtil.now();
+            issue.update();
         }
 
         return redirect(RouteUtil.getUrl(savedComment));
+    }
+
+    private static Comment saveComment(Project project, Issue issue, IssueComment comment) {
+        Comment savedComment;
+        IssueComment existingComment = IssueComment.find.where().eq("id", comment.id).findUnique();
+        if (existingComment == null) {
+            comment.projectId = project.id;
+            savedComment = saveComment(comment, getContainerUpdater(issue, comment));
+            NotificationEvent.afterNewComment(savedComment);
+        } else {
+            existingComment.contents = comment.contents;
+            savedComment = saveComment(existingComment, getContainerUpdater(issue, comment));
+            if(isSelectedToSendNotificationMail() || !existingComment.isAuthoredBy(UserApp.currentUser())){
+                NotificationEvent.afterCommentUpdated(savedComment);
+            }
+        }
+        return savedComment;
     }
 
     private static Runnable getContainerUpdater(final Issue issue, final IssueComment comment) {

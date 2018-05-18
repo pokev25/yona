@@ -34,7 +34,7 @@
 }
 
 <div pjax-container class="row-fluid issue-list-wrap">
-    <div class="span2 span-hard-wrap">
+    <div class="left-menu span2 span-hard-wrap">
         <div class="inner advanced">
             @group_issue_list_quicksearch(param)
 
@@ -73,6 +73,7 @@
                 </a>
             </li>
         }
+            <li>@common.twoColumnModeCheckboxArea()</li>
         </ul>
         @if(!currentPage.getList.isEmpty){
             <div class="filter-wrap small-heights">

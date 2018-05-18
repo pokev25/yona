@@ -20,21 +20,20 @@
  */
 package utils;
 
+import models.User;
+import org.apache.commons.lang.StringUtils;
+import play.api.Play;
+import play.data.validation.Constraints.Validator;
+import play.libs.Scala;
+import scala.Tuple3;
+
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import models.User;
-
-import org.apache.commons.lang.StringUtils;
-
-import play.api.Play;
-import play.data.validation.Constraints.Validator;
-import play.libs.Scala;
-import scala.Tuple3;
-import static play.libs.F.*;
+import static play.libs.F.Tuple;
 
 /**
  * Reserved words Validator
@@ -61,13 +60,16 @@ public class ReservedWordsValidator extends Validator<String> {
             }
         }
         RESERVED_WORDS.add("new");
+        RESERVED_WORDS.add("projects");
+        RESERVED_WORDS.add("orgs");
+        RESERVED_WORDS.add("organizations");
     }
 
     /**
      * get error message key
      *
      * @return errorMessageKey
-     * @see play.data.validation.Constraints.Validator#getErrorMessageKey()
+     * @see Validator#getErrorMessageKey()
      */
     @Override
     public Tuple<String, Object[]> getErrorMessageKey() {
@@ -79,7 +81,7 @@ public class ReservedWordsValidator extends Validator<String> {
      *
      * @param string input string
      * @return true if the input string is not a reserved word; false otherwise
-     * @see play.data.validation.Constraints.Validator#isValid(java.lang.Object)
+     * @see Validator#isValid(java.lang.Object)
      */
     @Override
     public boolean isValid(String string) {

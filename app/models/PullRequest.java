@@ -434,7 +434,7 @@ public class PullRequest extends Model implements ResourceConvertible {
                 String refName = getNameOfRefToMerged();
                 RevCommit commit = null;
                 try {
-                    ObjectId objectId = getRepository().getRef(refName).getObjectId();
+                    ObjectId objectId = getRepository().findRef(refName).getObjectId();
                     commit = new RevWalk(getRepository()).parseCommit(objectId);
                 } catch (Exception e) {
                     play.Logger.info("Failed to get the merged branch", e);
@@ -471,7 +471,7 @@ public class PullRequest extends Model implements ResourceConvertible {
                 ObjectInserter inserter = getRepository().newObjectInserter();
                 mergeCommitId = inserter.insert(mergeCommit);
                 inserter.flush();
-                inserter.release();
+                inserter.close();
 
                 return new MergeRefUpdate(mergeCommitId, whoMerges);
             }
@@ -778,6 +778,15 @@ public class PullRequest extends Model implements ResourceConvertible {
         ExpressionList<PullRequest> el = finder.where();
         if (condition.project != null) {
             el.eq(condition.category.project(), condition.project);
+        }
+        if (condition.organization != null) {
+            List<Project> projects = condition.organization.getVisibleProjects(UserApp.currentUser());
+            List<String> projectsIds = new ArrayList<>();
+            for (Project project : projects) {
+                projectsIds.add(project.id.toString());
+            }
+            el.in("to_project_id", projectsIds);
+            el.in("from_project_id", projectsIds);
         }
         Expression state = createStateSearchExpression(condition.category.states());
         if (state != null) {

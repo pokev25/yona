@@ -1,22 +1,8 @@
 @**
-* Yobi, Project Hosting SW
+* Yona, 21st Century Project Hosting SW
 *
-* Copyright 2012 NAVER Corp.
-* http://yobi.io
-*
-* @author Sangcheol Hwang
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*   http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+* Copyright Yona & Yobi Authors & NAVER Corp.
+* https://yona.io
 **@
 @()
 @import utils.TemplateHelper._
@@ -99,19 +85,24 @@
         }
         @requestHeader.session.get("loginId") match {
             case Some(v) => { yobi.ShortcutKey.setKeymapLink({
-                "P": "@routes.UserApp.userInfo(v)"
+                "U": "@routes.UserApp.userInfo(v)"
             }); }
             case None => { }
         }
 
+        yobi.ShortcutKey.setKeymapLink({
+            "A": "@routes.IssueApp.userIssues()"
+        });
+
         // yobi.Files
         yobi.Files.init({
             "sListURL"  : "@routes.AttachmentApp.getFileList()",
-            "sUploadURL": "@routes.AttachmentApp.uploadFile()"
+            "sUploadURL": "@routes.AttachmentApp.uploadFile()",
+            "maxFileSize": "@play.Configuration.root().getLong("application.maxFileSize", 2147483454L)"  // 2Gb
         });
 
         // ajax for issue link detail(ui.IssuePreview)
-        $(document).on("mouseenter", ".issueLink", function(){
+        $(document).on("mouseover", ".issueLink", function(){
             var welTarget = $(this);
 
             welTarget.tooltip({
@@ -149,7 +140,7 @@
         @for(key <- Context.current().flash().keySet) {
             @if(key != utils.Constants.TITLE &&
                 key != utils.Constants.DESCRIPTION){
-                $yobi.notify("@Messages(Context.current().flash().get(key))", 3000);
+                $yobi.notify("@Messages(Context.current().flash().get(key))", 5000);
             }
             @if(key == utils.Constants.TITLE){
                 $yobi.alert("@Messages(Context.current().flash().get(key))", null,
@@ -164,9 +155,21 @@
 
         yobi.OriginalMessage.hide($("[data-via-email]"));
 
-        $('a[class="title"]').on('click', function(){
+        $('.logo, .title > a, .project-menu-nav > li > a, .show-progress-bar, .project-breadcrumb > span > a, .project-name > a, a[class="title"]').on('click.progressbar', function(){
             NProgress.set(0.7);
             NProgress.start();
+        });
+
+        // judge whether contents link is internal or external
+        $('.markdown-wrap').find('a[href]').each(function () {
+            var $link = $(this);
+            var linkUrl = $link.attr("href");
+            if (linkUrl && linkUrl.match("^[^./#]")) {
+                var location = window.location;
+                if (linkUrl.indexOf(location.protocol + "//" + location.host) !== 0) {
+                    $(this).attr("target", "_blank");
+                }
+            }
         });
     });
 </script>
